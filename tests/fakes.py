@@ -131,6 +131,7 @@ class SentCall:
     text: str | None
     cards: list[Card]
     with_images: bool
+    quote_token: str | None = None
 
 
 class FakeLine:
@@ -138,7 +139,8 @@ class FakeLine:
 
     `reply_accepts` decides each reply's outcome; `reply_results` scripts the
     outcomes in order instead, and `push_statuses` scripts each push's failure status
-    (None lets the push through).
+    (None lets the push through). `remaining_messages` is what the quota question
+    answers, and `quota_lookups` counts the questions.
     """
 
     def __init__(
@@ -150,7 +152,10 @@ class FakeLine:
         push_statuses: list[int | None] | None = None,
         members: dict[str, bool | None] | None = None,
         group_names: dict[str, str] | None = None,
+        remaining_messages: int | None = 1000,
     ) -> None:
+        self.remaining_messages = remaining_messages
+        self.quota_lookups = 0
         self.members = members or {}
         self.group_names = group_names or {}
         self.group_name_lookups = 0
@@ -177,8 +182,11 @@ class FakeLine:
         cards: Sequence[Card] = (),
         *,
         with_images: bool = True,
+        quote_token: str | None = None,
     ) -> ReplyResult:
-        self.calls.append(SentCall("reply", reply_token, text, list(cards), with_images))
+        self.calls.append(
+            SentCall("reply", reply_token, text, list(cards), with_images, quote_token)
+        )
         if self.reply_results:
             return self.reply_results.pop(0)
         return ReplyResult.SENT if self.reply_accepts else ReplyResult.TOKEN_REFUSED
@@ -190,8 +198,9 @@ class FakeLine:
         cards: Sequence[Card] = (),
         *,
         with_images: bool = True,
+        quote_token: str | None = None,
     ) -> None:
-        self.calls.append(SentCall("push", to, text, list(cards), with_images))
+        self.calls.append(SentCall("push", to, text, list(cards), with_images, quote_token))
         status = self.push_statuses.pop(0) if self.push_statuses else None
         if status is not None:
             raise LineApiError("push", status)
@@ -209,6 +218,10 @@ class FakeLine:
 
     async def leave_group(self, group_id: str) -> None:
         self.left_groups.append(group_id)
+
+    async def get_remaining_messages(self) -> int | None:
+        self.quota_lookups += 1
+        return self.remaining_messages
 
     async def close(self) -> None:
         return None

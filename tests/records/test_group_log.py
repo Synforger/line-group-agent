@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -158,3 +159,98 @@ def test_the_latest_time_and_the_known_groups(tmp_path: Path) -> None:
     log.add("Ca", msg(2))
     assert log.last_message_time("Ca") == "2026-11-18T12:00:02+09:00"
     assert log.list_group_ids() == ["Ca", "Cb"]
+
+
+def log_with(tmp_path: Path, *messages: GroupMessage) -> GroupLog:
+    group_log = GroupLog(tmp_path)
+    for message in messages:
+        group_log.add("Ca", message)
+    return group_log
+
+
+def posted(
+    number: int, text: str, user: str | None = "U1", *, time: str = "2026-11-18T12:00:00+09:00"
+) -> GroupMessage:
+    return GroupMessage(time, f"m{number}", user, "Aki", text, from_bot=user is None)
+
+
+def test_only_the_requesters_own_messages_and_the_bots_replies_can_be_found_to_delete(
+    tmp_path: Path,
+) -> None:
+    group_log = log_with(
+        tmp_path,
+        posted(1, "my kyoto idea", "U1"),
+        posted(2, "bo's kyoto idea", "U2"),
+        posted(3, "the bot's kyoto answer", None),
+        posted(4, "unrelated", "U1"),
+    )
+    found = group_log.list_deletable("Ca", "KYOTO", 10, requester_user_id="U1")
+    assert [m.message_id for m in found] == ["m3", "m1"]
+
+
+def test_the_request_itself_is_never_found_and_the_limit_counts_newest_first(
+    tmp_path: Path,
+) -> None:
+    group_log = log_with(tmp_path, *(posted(n, f"kyoto {n}") for n in range(1, 5)))
+    found = group_log.list_deletable(
+        "Ca", "kyoto", 2, requester_user_id="U1", exclude_message_id="m4"
+    )
+    assert [m.message_id for m in found] == ["m3", "m2"]
+
+
+def test_without_a_known_requester_only_the_bots_replies_can_be_found(tmp_path: Path) -> None:
+    group_log = log_with(tmp_path, posted(1, "kyoto", "U1"), posted(2, "kyoto", None))
+    found = group_log.list_deletable("Ca", "kyoto", 10, requester_user_id=None)
+    assert [m.message_id for m in found] == ["m2"]
+
+
+def test_an_empty_query_finds_nothing_to_delete(tmp_path: Path) -> None:
+    group_log = log_with(tmp_path, posted(1, "kyoto"))
+    assert group_log.list_deletable("Ca", "  ", 10, requester_user_id="U1") == []
+
+
+def test_removed_messages_are_gone_from_the_file_and_returned(tmp_path: Path) -> None:
+    group_log = log_with(tmp_path, posted(1, "a"), posted(2, "b"), posted(3, "c"))
+    removed = group_log.remove("Ca", {"m1", "m3"})
+    assert [m.text for m in removed] == ["a", "c"]
+    assert [m.text for m in group_log.list_recent("Ca", 10)] == ["b"]
+    assert not any(tmp_path.rglob("*.tmp"))
+
+
+def test_removing_ids_that_are_not_there_leaves_the_file_untouched(tmp_path: Path) -> None:
+    group_log = log_with(tmp_path, posted(1, "a"))
+    path = tmp_path / "groups" / "Ca" / "messages.jsonl"
+    before = path.stat().st_mtime_ns
+    assert group_log.remove("Ca", {"m9"}) == []
+    assert path.stat().st_mtime_ns == before
+
+
+def test_messages_older_than_the_cutoff_are_removed_except_the_running_conversations(
+    tmp_path: Path,
+) -> None:
+    group_log = log_with(
+        tmp_path,
+        posted(1, "old", time="2026-10-01T12:00:00+09:00"),
+        posted(2, "old but live", time="2026-10-20T12:00:00+09:00"),
+        posted(3, "recent", time="2026-11-17T12:00:00+09:00"),
+    )
+    cutoff = datetime.fromisoformat("2026-10-19T12:00:00+09:00")
+    keep_since = datetime.fromisoformat("2026-10-15T00:00:00+09:00")
+    assert [m.text for m in group_log.remove_older_than("Ca", cutoff, keep_since=keep_since)] == [
+        "old"
+    ]
+    assert [m.text for m in group_log.list_recent("Ca", 10)] == ["old but live", "recent"]
+
+
+def test_without_a_running_conversation_every_message_before_the_cutoff_goes(
+    tmp_path: Path,
+) -> None:
+    group_log = log_with(
+        tmp_path,
+        posted(1, "old", time="2026-10-01T12:00:00+09:00"),
+        posted(2, "bad time", time="not a time"),
+        posted(3, "recent", time="2026-11-17T12:00:00+09:00"),
+    )
+    cutoff = datetime.fromisoformat("2026-10-19T12:00:00+09:00")
+    group_log.remove_older_than("Ca", cutoff, keep_since=None)
+    assert [m.text for m in group_log.list_recent("Ca", 10)] == ["bad time", "recent"]

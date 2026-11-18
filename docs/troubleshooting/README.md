@@ -13,8 +13,11 @@
   add that id to `allowed_group_ids` and restart.
 - The bot answers only a real mention (pick the account from the mention list).
   Typing its name as plain text is not a mention.
-- `answer: no reply to send` means the model answered without `<reply>…</reply>`;
-  make the persona less wordy, or raise `max_tokens` if answers are cut off.
+- Someone may have passed `max_mentions_per_user_per_hour`: the log says `answer: a member
+  passed the hourly limit; not answered`.
+- `answer: no reply to send` means the answer was empty and `error_text` is empty too. The
+  usual cause of an empty answer is a model that answered without `<reply>…</reply>`; make
+  the persona less wordy, or raise `max_tokens` if answers are cut off.
 - `answer: API refused the request (status 401)` means the API key file is wrong.
 
 ## The bot replies "This month's budget is used up."
@@ -45,11 +48,25 @@ took longer than LINE keeps a reply token (about a minute). The answer is still
 sent, as a push message, which counts against the account's monthly message
 quota. Fewer `max_uses` on the web tools make answers faster.
 
+## The bot says "Something went wrong"
+
+That is `error_text`: the model gave no `<reply>…</reply>`, used up its tool rounds
+(`max_tool_rounds`) or the agent hit an error; the log has one `answer:` line with the
+reason. When the Claude API itself fails, the bot stays silent and logs
+`model: API call failed` or `model: API refused the request (status …)`.
+
+## The wait text arrives, then the answer a while later
+
+That is intended: the answer needed web work, so the wait text took the reply token and the
+answer is a push message. Raise `wait_min_push_left` (or empty `wait_text`) to keep pushes
+for answers only.
+
 ## The agent does not start
 
 It prints the reason and exits with status 2:
 
 - `missing setting: …` / `… must be a …`: fix the configuration file
 - `cannot read the file named by …`: the secret file is missing or unreadable
+- `cannot read intro_file`: the introduction file named in the configuration is missing
 - `cannot read spend.json`: the spend file is damaged; move it aside (this
   month's figure then starts from 0)

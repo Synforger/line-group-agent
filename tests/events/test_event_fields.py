@@ -7,6 +7,8 @@ from line_group_agent.events.event_fields import (
     is_self_mentioned,
     is_text_message,
     local_time_of,
+    quote_token_of,
+    unsent_message_id_of,
 )
 
 
@@ -70,3 +72,19 @@ def test_age_is_counted_from_the_millisecond_timestamp() -> None:
     now = datetime.fromtimestamp(1_000).astimezone()
     assert age_seconds_of({"timestamp": 400_000}, now) == 600
     assert age_seconds_of({}, now) is None
+
+
+def test_the_quote_token_is_read_from_a_text_message() -> None:
+    event = {"message": {"type": "text", "quoteToken": "q1"}}
+    assert quote_token_of(event) == "q1"
+    assert quote_token_of({"message": {"type": "text"}}) is None
+    assert quote_token_of({"message": {"quoteToken": ""}}) is None
+    assert quote_token_of({}) is None
+
+
+def test_an_unsend_event_gives_the_id_of_the_message_taken_back() -> None:
+    event = {"type": "unsend", "unsend": {"messageId": "m7"}}
+    assert unsent_message_id_of(event) == "m7"
+    assert unsent_message_id_of({"type": "message", "unsend": {"messageId": "m7"}}) is None
+    assert unsent_message_id_of({"type": "unsend", "unsend": {}}) is None
+    assert unsent_message_id_of({"type": "unsend"}) is None

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from line_group_agent.agent.answerer import Answer
+from line_group_agent.agent.answerer import Answer, SlowNotice
 from line_group_agent.cards.card import Card
 from line_group_agent.events.event_dispatcher import EventDispatcher
 from line_group_agent.line_api.line_client import ReplyResult
@@ -29,7 +29,9 @@ class ScriptedAnswerer:
         self.cards = cards or []
         self.calls: list[tuple[str, GroupMessage]] = []
 
-    async def answer(self, group_id: str, mention: GroupMessage) -> Answer:
+    async def answer(
+        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+    ) -> Answer:
         self.calls.append((group_id, mention))
         return Answer(self.reply, self.cards)
 
@@ -40,8 +42,14 @@ def text_event(
     *,
     message_id: str = "m1",
     mentions_bot: bool = False,
+    user_id: str = "U1",
 ) -> dict[str, Any]:
-    message: dict[str, Any] = {"type": "text", "id": message_id, "text": text}
+    message: dict[str, Any] = {
+        "type": "text",
+        "id": message_id,
+        "text": text,
+        "quoteToken": f"quote-{message_id}",
+    }
     if mentions_bot:
         message["mention"] = {
             "mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]
@@ -50,7 +58,7 @@ def text_event(
         "type": "message",
         "replyToken": "reply-token-1",
         "timestamp": 1_763_434_800_000,
-        "source": {"type": "group", "groupId": group_id, "userId": "U1"},
+        "source": {"type": "group", "groupId": group_id, "userId": user_id},
         "message": message,
     }
 
@@ -228,7 +236,7 @@ async def test_the_worker_handles_queued_events_and_survives_a_failure(
 ) -> None:
     dispatcher, line, group_log, answerer = setup(tmp_path)
 
-    async def broken(group_id: str, mention: GroupMessage) -> Answer:
+    async def broken(group_id: str, mention: GroupMessage, **_: Any) -> Answer:
         raise RuntimeError(PRIVATE_TEXT)
 
     answerer.answer = broken  # type: ignore[method-assign]
@@ -248,7 +256,9 @@ def test_the_webhook_answers_200_before_the_answer_is_ready(tmp_path: Path) -> N
     release = asyncio.Event()
 
     class BlockedAnswerer:
-        async def answer(self, group_id: str, mention: GroupMessage) -> Answer:
+        async def answer(
+            self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        ) -> Answer:
             await release.wait()
             return Answer("late")
 
@@ -447,6 +457,9 @@ class RecordingObserver:
 
     async def after_answer(self, group_id: str) -> None:
         self.calls.append(("answered", group_id))
+
+    async def after_deletion(self, group_id: str) -> None:
+        self.calls.append(("deleted", group_id))
 
 
 def observed(tmp_path: Path, **line_options: Any) -> tuple[EventDispatcher, RecordingObserver]:

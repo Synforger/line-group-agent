@@ -1,14 +1,19 @@
 import json
 
 from line_group_agent.agent.prompt import (
+    DELETE_MESSAGES_TOOL_NAME,
     GUARD_TEXT,
     SHOW_CARDS_TOOL_NAME,
+    SUMMARY_DELETION_NOTE,
+    SUMMARY_REQUEST,
     build_envelope,
     build_system,
+    delete_messages_tool,
     extract_reply,
     format_search_results,
     search_history_tool,
     show_cards_tool,
+    summary_request,
 )
 from line_group_agent.records.group_log import GroupMessage
 
@@ -151,3 +156,28 @@ def test_the_show_cards_description_says_when_to_use_it_and_to_still_reply() -> 
 def test_the_rules_limit_cards_to_candidates_and_one_set_per_reply() -> None:
     assert "only for listing candidates" in GUARD_TEXT
     assert "one set of cards" in GUARD_TEXT
+
+
+def test_the_rules_tell_the_model_that_line_shows_no_markdown() -> None:
+    assert "LINE does not show Markdown" in GUARD_TEXT
+    assert "bold, headings" in GUARD_TEXT and "tables" in GUARD_TEXT
+
+
+def test_the_rules_limit_the_delete_tool_to_a_request_of_the_person_who_asked() -> None:
+    assert "delete_messages" in GUARD_TEXT
+    assert "only when that person asks" in GUARD_TEXT
+
+
+def test_the_delete_tool_takes_a_query_and_says_what_it_may_delete() -> None:
+    tool = delete_messages_tool(20)
+    assert tool["name"] == DELETE_MESSAGES_TOOL_NAME
+    assert tool["input_schema"]["required"] == ["query"]  # type: ignore[index]
+    description = str(tool["description"])
+    assert "up to 20" in description and "your own earlier replies" in description
+
+
+def test_a_summary_after_a_deletion_is_told_not_to_write_what_was_deleted() -> None:
+    assert summary_request(after_deletion=False) == SUMMARY_REQUEST
+    after = summary_request(after_deletion=True)
+    assert after.startswith(SUMMARY_REQUEST) and after.endswith(SUMMARY_DELETION_NOTE)
+    assert "Do not write the content of any deleted message" in after

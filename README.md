@@ -24,7 +24,19 @@ short answer. It stays quiet otherwise.
   one a name, a price, a short line, an optional picture and an "open" button that
   goes to its page. Up to 10 cards; see [Cards](docs/reference/cards.md).
 - **Says only what it means to say.** Only the text the model puts inside
-  `<reply>…</reply>` is sent to the group; its working notes never are.
+  `<reply>…</reply>` is sent to the group; its working notes never are. A reply is
+  plain text (LINE shows no Markdown) and quotes the message that called the bot.
+- **Tells the group when it needs a moment or cannot answer.** A slow answer is
+  preceded by a "one moment" text, a failed one by a fixed apology, and one person
+  cannot call the bot more than a set number of times an hour; see
+  [Notices, limits and alerts](docs/reference/notices-and-limits.md).
+- **Deletes on request.** Ask it to delete something you wrote, or unsend a message:
+  it is removed from the group record and the conversation, and the conversation
+  starts afresh from a summary that leaves it out. Records older than a set number
+  of days are deleted too (30 by default), the running conversation and the
+  summaries excepted; see [Deleting messages](docs/reference/deleting.md).
+- **Tells you when it is stuck.** A short push message reaches you when the Claude API
+  keeps failing, the month's spend passes 80% of the limit, or a send to LINE fails.
 - **Stays within a monthly budget.** Each answer's cost is counted from the API's
   usage figures. Before calling the API, the agent checks that this month's spend
   plus the most one answer can cost stays within your limit, both for the whole
@@ -43,6 +55,7 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │  2. allowed group? record the message
                                                                │  3. mentioned? continue the group's conversation with the Claude API ──▶ web search / web fetch
                                                                │                                  ├─▶ search_history (local record)
+                                                               │                                  ├─▶ delete_messages (your own messages, the bot's replies)
                                                                │                                  └─▶ show_cards (candidates as cards)
                                                                └─ 4. reply, text then cards (or push if the reply token expired)
 ```
@@ -152,6 +165,9 @@ How the budget is kept:
   the token lives (about a minute), the agent sends the answer as a push message
   instead, which counts against your account's monthly message quota. Cards go in
   the same call as the text, as a second message.
+- When an answer needs web work, the agent sends a short "one moment" text first (using
+  the reply token) and the answer follows as a push message. It does so only while LINE
+  reports enough messages left this month (`wait_min_push_left`).
 
 ## Files it writes
 
@@ -159,9 +175,9 @@ All under `state_dir`:
 
 | Path | What |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | Every text message of the group and every reply the bot sent (marked `from_bot`; a reply that carried cards ends with a line naming them), one JSON object per line. Append only |
+| `groups/<groupId>/messages.jsonl` | Every text message of the group and every reply the bot sent (marked `from_bot`; a reply that carried cards ends with a line naming them), one JSON object per line. Appended to; messages are removed when deleted or older than `retention_days` |
 | `conversations/g-<groupId>.jsonl` | The group's running conversation: what was sent to the model and what it answered, one row per line, for a chat client to show read-only |
-| `groups/<groupId>/journal/<date>-gen<N>.md` | The summary written when the group's conversation number `N` was rolled over |
+| `groups/<groupId>/journal/<date>-gen<N>.md` | The summary written when the group's conversation number `N` was rolled over. Never deleted |
 | `groups/<groupId>/spend.json` | The group's month, in the form of `spend.json` |
 | `spend.json` | This month's spend of the whole agent: `{"month", "spent", "limit", "currency", "updated_at"}`, rewritten whole each time |
 | `tabs.json` | The groups with their context amount, spend and generation, for a chat client (path: `tabs_file`) |

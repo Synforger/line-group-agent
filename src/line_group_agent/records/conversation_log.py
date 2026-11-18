@@ -22,6 +22,7 @@ from line_group_agent.records._internal.jsonl import (
     append_json_line,
     end_with_newline,
     read_json_lines,
+    replace_json_lines,
 )
 
 SUMMARY_PREFIX = "Summary of the conversation so far"
@@ -48,6 +49,10 @@ class ConversationLog:
     def read_rows(self) -> list[dict[str, Any]]:
         """Return every whole row written so far, oldest first."""
         return read_json_lines(self.path)
+
+    def replace_rows(self, rows: list[dict[str, Any]]) -> None:
+        """Replace the whole record with `rows`."""
+        replace_json_lines(self.path, rows)
 
     def add_user(self, content: str | list[dict[str, Any]]) -> dict[str, Any]:
         """Append what was sent as the user turn (text, or tool_result blocks) and

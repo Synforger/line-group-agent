@@ -44,3 +44,43 @@ def test_the_last_time_a_group_spoke_is_recovered_from_its_record(tmp_path: Path
 def test_a_group_id_that_could_leave_the_folder_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         registry(tmp_path).get("../x")
+
+
+def test_the_generation_comes_from_the_journal_after_old_rows_expired(tmp_path: Path) -> None:
+    journal = SummaryJournal(tmp_path)
+    journal.write("Ca", 1, "First summary.", date(2026, 10, 1))
+    journal.write("Ca", 2, "Second summary.", date(2026, 10, 20))
+    first = registry(tmp_path).get("Ca")
+    first.add_user("Group messages ...")
+    first.add_user("Summary of the conversation so far\nSecond summary.\n\nnext turn")
+    # The record now starts at the summary row that opened generation 3.
+    first.log.replace_rows(first.log.read_rows()[1:])
+    reopened = registry(tmp_path).get("Ca")
+    assert reopened.generation == 3
+    assert reopened.pending_summary is None and reopened.shown_generation == 3
+
+
+def test_a_summary_the_record_has_not_opened_with_waits_in_its_own_generation(
+    tmp_path: Path,
+) -> None:
+    journal = SummaryJournal(tmp_path)
+    journal.write("Ca", 1, "First summary.", date(2026, 10, 1))
+    journal.write("Ca", 2, "Second summary.", date(2026, 10, 20))
+    first = registry(tmp_path).get("Ca")
+    first.add_user("Summary of the conversation so far\nFirst summary.\n\nturn of generation 2")
+    reopened = registry(tmp_path).get("Ca")
+    assert reopened.generation == 2
+    assert reopened.pending_summary == "Second summary."
+    assert reopened.shown_generation == 3
+
+
+def test_a_record_with_no_journal_keeps_the_generation_counted_from_its_rows(
+    tmp_path: Path,
+) -> None:
+    first = registry(tmp_path).get("Ca")
+    first.add_user("one")
+    first.add_assistant(
+        {"id": "m", "role": "assistant", "content": [], "usage": {"input_tokens": 1}}
+    )
+    first.add_user("Summary of the conversation so far\nx\n\ntwo")
+    assert registry(tmp_path).get("Ca").generation == 2

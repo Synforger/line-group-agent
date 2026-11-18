@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from line_group_agent.records.group_log import GroupMessage
+from tests.fakes import text_answer
 from tests.world import GROUP, build_world
 
 pytestmark = pytest.mark.anyio
@@ -56,3 +57,35 @@ async def test_the_patrol_rereads_the_settings_and_rewrites_the_tab_list(tmp_pat
     world.write_settings(context_window_tokens=30_000)
     await world.watcher.patrol()
     assert world.tabs_json()["context_window"] == 30_000
+
+
+async def test_after_a_deletion_a_marked_conversation_is_summarized_at_once(
+    tmp_path: Path,
+) -> None:
+    usage = {"input_tokens": 10, "output_tokens": 1}
+    summary = text_answer("Summary.", message_id="msg_s", usage=usage)
+    world = build_world(tmp_path, [text_answer("<reply>ok</reply>", usage=usage), summary])
+    secret = GroupMessage("2026-11-18T12:00:00+09:00", "m1", "U1", "Aki", "a secret")
+    world.group_log.add(GROUP, secret)
+    await world.answerer.answer(GROUP, GroupMessage("t", "m2", "U1", "Aki", "@bot hi"))
+    world.deleter.delete(GROUP, {"m1"})
+    await world.watcher.after_deletion(GROUP)
+    conversation = world.conversations.get(GROUP)
+    assert conversation.pending_summary == "Summary."
+    assert world.tabs_json()["tabs"][0]["generation"] == 2
+
+
+async def test_the_patrol_sweeps_expired_messages_once_a_day(tmp_path: Path) -> None:
+    world = build_world(tmp_path, [])
+    world.group_log.add(GROUP, GroupMessage("2026-09-01T12:00:00+09:00", "m1", "U1", "A", "old"))
+    world.group_log.add(GROUP, GroupMessage("2026-11-17T12:00:00+09:00", "m2", "U1", "A", "new"))
+    await world.watcher.patrol()
+    assert [m.text for m in world.group_log.list_recent(GROUP, 10)] == ["new"]
+
+
+async def test_a_watcher_without_a_sweeper_keeps_everything(tmp_path: Path) -> None:
+    world = build_world(tmp_path, [])
+    world.watcher.retention = None
+    world.group_log.add(GROUP, GroupMessage("2026-09-01T12:00:00+09:00", "m1", "U1", "A", "old"))
+    await world.watcher.patrol()
+    assert len(world.group_log.list_recent(GROUP, 10)) == 1

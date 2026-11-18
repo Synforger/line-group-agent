@@ -7,6 +7,7 @@ import pytest
 from line_group_agent.cards.card import Card
 from line_group_agent.line_api.line_client import (
     API_BASE_URL,
+    UNLIMITED_MESSAGES,
     LineApiError,
     LineClient,
     ReplyResult,
@@ -199,3 +200,59 @@ async def test_group_name_is_none_when_line_does_not_give_it() -> None:
     assert await line.get_group_name("Cg") is None
     line, _ = client_answering(200, {"groupId": "Cg"})
     assert await line.get_group_name("Cg") is None
+
+
+async def test_a_reply_and_a_push_put_the_quote_token_on_the_text_message_only() -> None:
+    line, seen = client_answering(200)
+    await line.reply("rt", "x", CARDS, quote_token="q1")
+    await line.push("Cgroup", "x", CARDS, quote_token="q2")
+    for request, token in zip(seen, ("q1", "q2"), strict=True):
+        text, flex = json.loads(request.content)["messages"]
+        assert text["quoteToken"] == token
+        assert "quoteToken" not in flex
+
+
+async def test_without_a_quote_token_the_text_message_has_none() -> None:
+    line, seen = client_answering(200)
+    await line.reply("rt", "x")
+    assert "quoteToken" not in json.loads(seen[0].content)["messages"][0]
+
+
+def client_routing(routes: dict[str, tuple[int, dict[str, Any]]]) -> LineClient:
+    def handle(request: httpx.Request) -> httpx.Response:
+        status, body = routes.get(request.url.path, (404, {}))
+        return httpx.Response(status, json=body)
+
+    http = httpx.AsyncClient(base_url=API_BASE_URL, transport=httpx.MockTransport(handle))
+    return LineClient(TOKEN, http_client=http)
+
+
+async def test_the_remaining_messages_are_the_quota_less_the_consumption() -> None:
+    line = client_routing(
+        {
+            "/v2/bot/message/quota": (200, {"type": "limited", "value": 200}),
+            "/v2/bot/message/quota/consumption": (200, {"totalUsage": 150}),
+        }
+    )
+    assert await line.get_remaining_messages() == 50
+
+
+async def test_the_remaining_messages_never_go_below_zero() -> None:
+    line = client_routing(
+        {
+            "/v2/bot/message/quota": (200, {"type": "limited", "value": 200}),
+            "/v2/bot/message/quota/consumption": (200, {"totalUsage": 230}),
+        }
+    )
+    assert await line.get_remaining_messages() == 0
+
+
+async def test_an_account_without_a_limit_has_a_very_large_number_left() -> None:
+    line = client_routing({"/v2/bot/message/quota": (200, {"type": "none"})})
+    assert await line.get_remaining_messages() == UNLIMITED_MESSAGES
+
+
+async def test_the_remaining_messages_are_none_when_line_does_not_say() -> None:
+    assert await client_routing({}).get_remaining_messages() is None
+    line = client_routing({"/v2/bot/message/quota": (200, {"type": "limited", "value": 200})})
+    assert await line.get_remaining_messages() is None
