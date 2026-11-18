@@ -1,121 +1,161 @@
-# personal-template
+# line-group-agent
 
 > 🇯🇵 日本語版: [README.ja.md](README.ja.md)
 
-A **language-neutral quality template** for public personal
-repositories. `task init` promotes `_core/` (the quality machinery
-shared by every derived project) to the repo root and your project
-starts with the full toolchain below already wired.
+> A LINE bot that sits in a group chat and answers, with Claude, only when someone mentions it.
 
-Living example of a derived repository:
-[claude-code-statusline](https://github.com/Synforger/claude-code-statusline).
+line-group-agent is a small server for a LINE Official Account. Add the account
+to a group, and whenever a member mentions it, it reads the recent conversation,
+looks things up on the web or in the group's past messages, and replies with a
+short answer. It stays quiet otherwise.
 
-## What you get
+- **Answers only when mentioned.** LINE marks a mention of the bot itself; plain
+  text that happens to contain the bot's name is not a mention.
+- **Remembers the group.** Every text message of an allowed group is appended to
+  a local record, so "what did we say about the hotel?" can be answered later.
+- **Looks things up.** Web search and web page reading (server-side tools of the
+  Claude API) plus a search over the group's own record.
+- **Says only what it means to say.** Only the text the model puts inside
+  `<reply>…</reply>` is sent to the group; its working notes never are.
+- **Stays within a monthly budget.** Each answer's cost is counted from the API's
+  usage figures. Before calling the API, the agent checks that this month's spend
+  plus the most one answer can cost stays within your limit; if not, it replies
+  with a fixed line instead.
+- **Treats the group as data.** Group messages are handed to the model in an
+  envelope and are never read as instructions; the agent has no tool that can
+  book, pay or send anything outside the group.
 
-| category | contents |
-|---|---|
-| **Local-first CI** | `task lint` / `task test:unit` / `task docs:check` run every quality gate on your machine — zero GitHub Actions billing |
-| **Anonymity guard** | [guard-dispatcher](https://github.com/Synforger/guard-dispatcher) (machine-wide hooks gate) machine-checks commits / pushes / PRs for identity leaks; this template ships only the repo-specific hook (branch guard + gitleaks) |
-| **Secret guard** | gitleaks in the pre-commit hook catches API keys, passwords, private keys before they leave the working tree |
-| **Docs freshness guard** | verifies that paths, `task` names, tree diagrams, and conflict markers inside your markdown match reality (4 axes) |
-| **Toolchain single-source** | `.tooling/versions.yaml` holds the host floor; `task doctor` diagnoses MISSING / TOO OLD / OK, `task lint:versions` catches downstream config drift |
-| **Aggregate security audit** | `task audit` runs anon-scan + gitleaks full history + pip-audit + npm audit + cargo audit in one pass, skipping absent tools |
-| **Stack-aware clean** | `task clean` removes build artefacts + caches for whichever stacks are present |
-| **Release driver** | `task release:cut LEVEL=patch\|minor\|major` bumps, commits, tags, and pushes in one command; `DRY_RUN=1` previews |
-| **Public-OSS essentials** | `SECURITY.md` / `ROADMAP.md` / `THIRD_PARTY_NOTICES.md` templates included; the latter regenerates via `task gen-notices` |
-| **Branch protection** | one command applies main-branch protection via the gh CLI |
-| **Interactive personalization** | replaces package name / GitHub URL / version placeholders interactively |
+## How it works
 
-## Usage (4 steps)
+```
+LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──▶ line-group-agent (127.0.0.1:8790)
+                                                               │  POST /line/webhook
+                                                               │  1. size cap, signature check, 200 at once
+                                                               │  2. allowed group? record the message
+                                                               │  3. mentioned? ask the Claude API ──▶ web search / web fetch
+                                                               │                                  └─▶ search_history (local record)
+                                                               └─ 4. reply (or push if the reply token expired)
+```
+
+- The server listens on loopback only. Reaching it from LINE (HTTPS on a public
+  address) is up to you: a reverse proxy, a tunnel, or
+  [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) in front of it.
+- Events are handled one at a time after the webhook has answered, so LINE never
+  waits for the model.
+- Everything the agent keeps lives in one state folder you choose (see
+  [Files it writes](#files-it-writes)).
+
+## Requirements
+
+- macOS or Linux with [uv](https://docs.astral.sh/uv/) (it brings Python 3.12)
+  and, optionally, [go-task](https://taskfile.dev/)
+- A LINE Official Account with a Messaging API channel
+  ([LINE Developers Console](https://developers.line.biz/console/))
+- A Claude API key ([Claude Console](https://platform.claude.com/))
+- An HTTPS address that forwards to the agent's loopback port
+
+## Quick start
 
 ```bash
-# 1. Create a new repo from this template, then clone it
-gh repo create <owner>/<new-project> --template Synforger/personal-template --clone
-
-# 2. Promote the template structure to the repo root
-cd <new-project>
-task init
-
-# 3. Set package name / GitHub URL / version interactively
-pip install -r setup-requirements.txt
-python personalize.py
-
-# 4. Install dev dependencies + arm the git hooks
-task setup
+git clone https://github.com/Synforger/line-group-agent.git
+cd line-group-agent
+task setup                      # uv sync --python 3.12
 ```
 
-See
-[`_core/docs/internals/template-usage.md`](_core/docs/internals/template-usage.md)
-for the post-init structure and workflow (the file is removed by
-`task init`).
+1. Put each secret in its own file, readable only by you (`chmod 600`): the
+   Claude API key, the channel secret and the channel access token of your
+   Messaging API channel.
+2. Copy [`configs/config.example.json`](configs/config.example.json) to a place
+   outside the repository, point its `*_file` settings at the three files, set
+   `state_dir`, and write a persona file (an example is in
+   [`configs/persona.example.md`](configs/persona.example.md)). Relative paths
+   are read from the folder that holds the configuration file.
+3. Start the agent:
 
-## No language scaffolding
+   ```bash
+   uv run line-group-agent --config /path/to/config.json
+   ```
 
-This template ships quality machinery only. The stack verbs —
-`task setup / lint / test:unit / test:integration / build / run` —
-are stubs you fill in with your project's real commands after
-deriving (a `Taskfile.local.yml` include is honoured if you prefer
-keeping them separate). The contract is that every derived repo
-answers to the same verbs; the implementation is yours.
+4. In the LINE Developers Console, set the webhook URL to
+   `https://<your-host>/line/webhook`, turn on **Use webhook**, allow the account
+   to join group chats, and turn off the automatic reply messages.
+5. Invite the account to your group. The agent logs one line with the group's id
+   (`join: joined a group that is not allowed: group_id=C…`). Add that id to
+   `allowed_group_ids` and restart. From then on, mention the account in the
+   group to ask it something.
 
-## Why local-first (and where CI fits)
+### Running it as a service
 
-Every gate runs offline on the maintainer's machine — no runner
-minutes, works in forks, and survives any CI pricing change. On public
-repositories a thin `ci.yml` re-runs the exact same `task ci` on pull
-requests as a status-check mirror (free on public repos, and it
-refuses to run on private ones). The checks themselves are never
-implemented in workflow files.
+For a long-running install, install the package into its own environment and
+call the installed executable directly:
 
-## Language policy
-
-- `README.md` is English; `README.ja.md` is Japanese. Both link to
-  each other at the top.
-- User-facing output (`--help`, error messages, CI output) is
-  English.
-- Code comments and internal design notes may be Japanese.
-
-## Structure (template state)
-
-```
-personal-template/
-├── README.md / README.ja.md     # this file + Japanese counterpart
-├── Taskfile.yml                 # init / install:core (overwritten by _core/Taskfile.yml on init)
-├── _core/                       # language-neutral machinery, promoted to root on init
-│   ├── Taskfile.yml             # core task definitions (becomes the root Taskfile.yml)
-│   ├── .githooks/pre-commit     # repo-local hook (branch guard + gitleaks; the anon
-│   │                            #   baseline runs in guard-dispatcher, AND-composed)
-│   ├── .github/                 # ISSUE_TEMPLATE/ + workflows/version-bump.yml
-│   ├── .tooling/local-ci/       # docs-check / doctor / audit / clean / lint-versions /
-│   │                            #   version-bump / release-cut / setup-lib
-│   ├── docs/                    # two-tier user/contributor docs placeholder
-│   ├── scripts/                 # init.py / install-core.sh / post-init-github-settings.sh /
-│   │                            #   setup-branch-protection.sh / gen-third-party-notices.py
-│   ├── personalize.py
-│   └── setup-requirements.txt
+```bash
+uv sync --python 3.12 --no-dev
+/path/to/line-group-agent/.venv/bin/line-group-agent --config /path/to/config.json
 ```
 
-## Design principles
+The agent takes its settings only from the configuration file and the files it
+names: the API key, the API address, proxies and tracing are all set explicitly, so
+variables such as `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` or `HTTPS_PROXY` have no
+effect. It does not depend on the working directory either, so a launchd or systemd
+unit needs nothing but this command line. Service files are in [`docs/setup/`](docs/setup/README.md).
 
-- **Structural symmetry** — every derived repo answers to the same
-  task verbs and file layout
-- **Minimal adoption cost** — adopting a stack means filling in the
-  Taskfile stubs plus one line in versions.yaml
-- **Language-neutral core** — docs-check, hooks, GitHub workflow,
-  branch protection are all shared via `_core/`
+## Cost
 
-## Tests
+The agent counts what it spends; it does not look prices up. Write them in
+`prices_usd` from the provider's pricing page. The example configuration holds the
+prices of Claude Haiku 5.5 as published on 2026-11-18:
 
-The template's own machinery is covered by a bats suite:
+| Item | Price (USD) |
+|---|---|
+| Input / output, prompts up to 100K tokens | $0.10 / $0.50 per million tokens |
+| Input / output, prompts over 100K tokens | $0.50 / $2.50 per million tokens |
+| Cache write (5 minutes) / cache read | $0.125 / $0.01 per million tokens |
+| Web search | $10 per 1,000 searches |
+| Web fetch | no charge beyond the tokens it adds |
 
-```sh
-brew install bats-core   # once
-task test:template       # or: bats tests/
-```
+Sources: [pricing](https://platform.claude.com/docs/en/about-claude/pricing),
+[web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool),
+[web fetch tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool).
 
-Fixtures build throwaway repos under the test tmpdir — nothing in the
-checkout is mutated.
+How the budget is kept:
+
+- `budget.monthly_limit` is in `budget.currency`; `currency_per_usd` converts the
+  dollar figures. The month follows the machine's local time and starts again
+  from 0.
+- Before answering a mention, the agent estimates the most it can cost: every
+  request of the tool loop (`max_tool_rounds + 1`), each with
+  `estimated_input_tokens_per_request` of prompt, a full `max_tokens` answer and
+  every web search `max_uses` allows. If this month's spend plus that estimate
+  would pass the limit, it does not call the API and replies with
+  `budget.exhausted_text`.
+- The estimate is a guard, not a bill. Also set a spend limit on the API key's
+  workspace in the Claude Console.
+- A reply uses LINE's reply token and is free. When the model takes longer than
+  the token lives (about a minute), the agent sends the answer as a push message
+  instead, which counts against your account's monthly message quota.
+
+## Files it writes
+
+All under `state_dir`:
+
+| Path | What |
+|---|---|
+| `groups/<groupId>/messages.jsonl` | Every text message of the group, one JSON object per line (time, message id, user id, display name when LINE gives it, text). Append only |
+| `conversations/<tab_name>.jsonl` | What was sent to the model and what it answered, one row per line, for a chat client to show read-only |
+| `spend.json` | This month's spend: `{"month", "spent", "limit", "currency", "updated_at"}`, rewritten whole each time |
+
+Formats are in [`docs/reference/files.md`](docs/reference/files.md).
+
+## Documentation
+
+- Setup (LINE channel, running as a service): [`docs/setup/`](docs/setup/README.md)
+- Configuration and file formats: [`docs/reference/`](docs/reference/README.md)
+- Troubleshooting: [`docs/troubleshooting/`](docs/troubleshooting/README.md)
+- Contributing: [`docs/internals/`](docs/internals/README.md)
 
 ## License
 
-Apache-2.0 ([`LICENSE`](LICENSE))
+Apache-2.0 ([`LICENSE`](LICENSE)). Dependencies are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md); vulnerability reports go
+through [`SECURITY.md`](SECURITY.md).
