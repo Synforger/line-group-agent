@@ -1,9 +1,10 @@
 """Take deleted messages out of the rows of a conversation record.
 
 A row shows a message in a few known shapes: an element of the envelope, a line of a
-history-search result, and (for the bot's own replies) a `<reply>` in an answer. Each
-is rewritten to say `[deleted]` instead of the text. Thinking blocks are dropped from
-answers, since they can no longer be sent back once what came before them changed.
+history-search result, a photo (its caption and image block) and, for the bot's own
+replies, a `<reply>` in an answer. Each is rewritten to say `[deleted]` instead of the text.
+Thinking blocks are dropped from answers, since they can no longer be sent back once what
+came before them changed.
 What the model wrote about a member's message in its own words is not found.
 
 Pure functions; called by the message deleter for every row of a record.
@@ -21,6 +22,7 @@ from line_group_agent.agent.prompt import (
     REPLY_PATTERN,
     format_search_results,
     message_element,
+    photo_caption,
 )
 from line_group_agent.cards.card_record import CARD_RECORD_LABEL
 from line_group_agent.records.group_log import GroupMessage
@@ -47,7 +49,39 @@ def _redact_user_content(content: Any, deleted: Sequence[GroupMessage]) -> Any:
         return _redact_text(content, deleted)
     if not isinstance(content, list):
         return content
-    return [_redact_user_block(block, deleted) for block in content]
+    return [_redact_user_block(block, deleted) for block in _redact_photos(content, deleted)]
+
+
+def _redact_photos(blocks: list[Any], deleted: Sequence[GroupMessage]) -> list[Any]:
+    """Replace the caption and the image block of each deleted photo by one `[deleted]` text."""
+    captions = {photo_caption(message) for message in deleted if message.image_file}
+    if not captions:
+        return blocks
+    kept: list[Any] = []
+    skip_image = False
+    for index, block in enumerate(blocks):
+        if skip_image:
+            skip_image = False
+            continue
+        following = blocks[index + 1] if index + 1 < len(blocks) else None
+        if _is_text(block) and block["text"] in captions and _is_image(following):
+            kept.append({"type": "text", "text": DELETED_MARK})
+            skip_image = True
+            continue
+        kept.append(block)
+    return kept
+
+
+def _is_text(block: Any) -> bool:
+    return (
+        isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+    )
+
+
+def _is_image(block: Any) -> bool:
+    return isinstance(block, dict) and block.get("type") == "image"
 
 
 def _redact_user_block(block: Any, deleted: Sequence[GroupMessage]) -> Any:

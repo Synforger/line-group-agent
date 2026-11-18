@@ -31,6 +31,28 @@ def is_text_message(event: dict[str, Any]) -> bool:
     )
 
 
+TEXT_KIND = "text"
+IMAGE_KIND = "image"
+
+
+def message_kind_of(event: dict[str, Any]) -> str | None:
+    """Return `text` or `image` for a message event the agent records, None for any other
+    event or kind of message (a sticker, a video, a file …)."""
+    if is_text_message(event):
+        return TEXT_KIND
+    message = event.get("message") or {}
+    if event.get("type") == "message" and message.get("type") == IMAGE_KIND:
+        return IMAGE_KIND
+    return None
+
+
+def is_external_image(event: dict[str, Any]) -> bool:
+    """Return whether the image sits at an address of the sender's (LINE cannot give its
+    content), not in LINE's own storage."""
+    provider = (event.get("message") or {}).get("contentProvider") or {}
+    return provider.get("type") == "external"
+
+
 def quote_token_of(event: dict[str, Any]) -> str | None:
     """Return the token that quotes the event's message in a reply, or None without one."""
     token = (event.get("message") or {}).get("quoteToken")

@@ -158,7 +158,8 @@ class GroupConversation:
                 self.context_tokens = context_tokens_of(usage)
 
     def _apply_user(self, content: Any, timestamp: Any) -> None:
-        if isinstance(content, str) and content.startswith(SUMMARY_PREFIX):
+        text = _leading_text_of(content)
+        if text is not None and text.startswith(SUMMARY_PREFIX):
             self.generation += 1 if self.messages else 0
             self.messages = []
             self.context_tokens = None
@@ -167,7 +168,7 @@ class GroupConversation:
             self.pending_since = None
         if not self.messages and isinstance(timestamp, str):
             self._opened_at = timestamp
-            self._opening_content = content if isinstance(content, str) else None
+            self._opening_content = text
         if isinstance(content, str | list):
             self.messages.append({"role": "user", "content": content})
 
@@ -179,3 +180,14 @@ def _moment_of(value: Any) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _leading_text_of(content: Any) -> str | None:
+    """Return the text of a user turn: the string itself, or the first text block of a turn
+    that carries photos after its text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content and isinstance(content[0], dict):
+        text = content[0].get("text")
+        return text if content[0].get("type") == "text" and isinstance(text, str) else None
+    return None

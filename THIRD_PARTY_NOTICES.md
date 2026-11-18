@@ -23,6 +23,7 @@ re-run the generator and commit the diff.
 | python | jiter | 0.19.0 | MIT | [link](https://github.com/pydantic/jiter/) |
 | python | line-group-agent | 0.1.0 | Apache-2.0 | [link](https://github.com/Synforger/line-group-agent) |
 | python | opentelemetry-api | 1.45.2 | Apache-2.0 | [link](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) |
+| python | pillow | 13.0.0 | MIT-CMU | [link](https://python-pillow.org) |
 | python | pydantic | 2.14.3 | MIT | [link](https://github.com/pydantic/pydantic) |
 | python | pydantic_core | 2.50.4 | MIT | [link](https://github.com/pydantic) |
 | python | sniffio | 1.3.1 | Apache Software License; MIT License | [link](https://github.com/python-trio/sniffio) |

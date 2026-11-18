@@ -19,6 +19,8 @@ from line_group_agent.agent.rollover import Rollover
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.group_watcher import GroupWatcher
+from line_group_agent.media.image_store import ImageStore
+from line_group_agent.media.photo_picker import PhotoPicker
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 from line_group_agent.records.retention_sweeper import RetentionSweeper
@@ -64,6 +66,7 @@ class World:
     rollover: Rollover
     retention: RetentionSweeper
     watcher: GroupWatcher
+    images: ImageStore
 
     def write_settings(self, **values: Any) -> None:
         self.config.settings_file.write_text(json.dumps(values), encoding="utf-8")
@@ -96,8 +99,16 @@ def build_world(
     tabs = TabsFile(config.tabs_file, conversations, books, settings, clock)
     caller = ModelCaller(config, client, "SYSTEM", books, extra_tools=client_tools.definitions())
     deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
+    images = ImageStore(config.state_dir)
     answerer = Answerer(
-        config, caller, group_log, conversations, books, deleter, client_tools=client_tools
+        config,
+        caller,
+        group_log,
+        conversations,
+        books,
+        deleter,
+        client_tools=client_tools,
+        photos=PhotoPicker(images, config.max_images_per_turn),
     )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
@@ -106,5 +117,5 @@ def build_world(
     )
     return World(
         config, client, line, clock, settings, group_log, journal, conversations, books,
-        tabs, caller, answerer, deleter, rollover, retention, watcher,
+        tabs, caller, answerer, deleter, rollover, retention, watcher, images,
     )  # fmt: skip

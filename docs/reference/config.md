@@ -42,6 +42,8 @@ folder that holds the file. Settings are not taken from environment variables.
 | `max_mentions_per_user_per_hour` | `20` | Most mentions of the bot one person gets answered in an hour (1 or more) |
 | `rate_limit_text` | `You have asked a lot in the last hour. Please try again a little later.` | Sent the first time a person passes the limit. Empty: nothing is sent |
 | `retention_days` | `30` | Group messages and conversation rows older than this are deleted once a day, except the running conversation's; the summaries are kept. See [Deleting messages](deleting.md) (1 or more) |
+| `max_images_per_turn` | `3` | Most photos given to the model at one mention (the newest ones the group sent since the bot's last turn). `0` turns photos off: they are neither kept nor recorded. See [Photos](group-tools.md#photos) |
+| `max_image_edge_pixels` | `1568` | A photo whose long side is longer is scaled down to this before it is kept (64 or more) |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

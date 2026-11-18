@@ -1,10 +1,11 @@
-"""The record of a group: every text message of an allowed group, one JSON line each,
-and every reply the bot sent there (marked `from_bot`), so a later mention sees the
-conversation the bot itself took part in.
+"""The record of a group: every text message of an allowed group (and a line for each photo
+or location), one JSON line each, and every reply the bot sent there (marked `from_bot`), so
+a later mention sees the conversation the bot itself took part in.
 
 Written by the event dispatcher, read by the answerer (recent messages and history
 search). Lives at `<state_dir>/groups/<groupId>/messages.jsonl`. Rows are appended; the
-file is rewritten whole only to delete messages (on request or by age).
+file is rewritten whole only to delete messages (on request or by age); the photo files of
+deleted messages go with them.
 """
 
 from __future__ import annotations
@@ -23,11 +24,13 @@ from line_group_agent.records._internal.jsonl import (
 )
 
 GROUP_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{1,64}$")
+IMAGES_FOLDER_NAME = "images"
 
 
 @dataclass(frozen=True)
 class GroupMessage:
-    """One text message said in the group (by a member, or by the bot when `from_bot`)."""
+    """One message said in the group (by a member, or by the bot when `from_bot`). A photo
+    is the text `[写真]` with the name of its file in `image_file`."""
 
     time: str
     message_id: str
@@ -35,6 +38,7 @@ class GroupMessage:
     display_name: str | None
     text: str
     from_bot: bool = False
+    image_file: str | None = None
 
 
 class GroupLog:
@@ -45,7 +49,10 @@ class GroupLog:
 
     def add(self, group_id: str, message: GroupMessage) -> None:
         """Append one message to the group's record."""
-        append_json_line(self._path(group_id), asdict(message))
+        row = asdict(message)
+        if message.image_file is None:
+            del row["image_file"]
+        append_json_line(self._path(group_id), row)
 
     def has_message(self, group_id: str, message_id: str) -> bool:
         """Return whether a message with this id is already in the group's record."""
@@ -166,7 +173,15 @@ class GroupLog:
         kept = [row for row, is_match in zip(rows, verdicts, strict=True) if not is_match]
         replace_json_lines(path, kept)
         removed = [row for row, is_match in zip(rows, verdicts, strict=True) if is_match]
-        return [m for row in removed if (m := _message_of(row)) is not None]
+        messages = [m for row in removed if (m := _message_of(row)) is not None]
+        self._delete_images(group_id, messages)
+        return messages
+
+    def _delete_images(self, group_id: str, messages: list[GroupMessage]) -> None:
+        images = self._path(group_id).parent / IMAGES_FOLDER_NAME
+        for message in messages:
+            if message.image_file:
+                (images / Path(message.image_file).name).unlink(missing_ok=True)
 
     def _path(self, group_id: str) -> Path:
         if not GROUP_ID_PATTERN.match(group_id):
@@ -189,6 +204,7 @@ def _message_of(row: dict[str, Any]) -> GroupMessage | None:
         display_name=row.get("display_name"),
         text=text,
         from_bot=row.get("from_bot") is True,
+        image_file=row["image_file"] if isinstance(row.get("image_file"), str) else None,
     )
 
 

@@ -9,7 +9,8 @@ mention sees what the bot said.
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
-A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
+A photo a member sends is kept (made small enough for the model) and recorded as a `[写真]`
+line. A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
 without the model. A message a member takes back (unsend) is deleted from the records.
 When the bot joins an allowed group it introduces itself with a fixed text. A button press
 on a poll card (a postback) is counted as a vote and not answered.
@@ -49,13 +50,16 @@ from line_group_agent.alerts.alert_notifier import AlertNotifier
 from line_group_agent.cards.card_record import format_card_record
 from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
+    IMAGE_KIND,
+    TEXT_KIND,
     age_seconds_of,
     group_id_of,
     is_called_by_name,
+    is_external_image,
     is_redelivery,
     is_self_mentioned,
-    is_text_message,
     local_time_of,
+    message_kind_of,
     postback_of,
     quote_token_of,
     strip_call_name,
@@ -67,6 +71,7 @@ from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.line_api.line_client import LineApiError, LineClient
+from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
 logger = logging.getLogger(__name__)
@@ -127,6 +132,7 @@ class EventDispatcher:
         deleter: MessageDeleter | None = None,
         postbacks: PostbackHandler | None = None,
         itineraries: ItineraryBook | None = None,
+        media: MediaRecorder | None = None,
         notifier: AlertNotifier | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -141,6 +147,7 @@ class EventDispatcher:
         self.deleter = deleter
         self.postbacks = postbacks
         self.itineraries = itineraries
+        self.media = media
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
@@ -197,7 +204,8 @@ class EventDispatcher:
         if (postback := postback_of(event)) is not None:
             await self._count_vote(group_id, event, *postback)
             return
-        if not is_text_message(event):
+        kind = message_kind_of(event)
+        if kind is None or (kind == IMAGE_KIND and self.media is None):
             return
 
         message = event["message"]
@@ -207,17 +215,21 @@ class EventDispatcher:
             return
         source = event.get("source") or {}
         user_id = source.get("userId") if isinstance(source.get("userId"), str) else None
+        text, image_file = await self._content_of(group_id, event, kind)
         record = GroupMessage(
             time=local_time_of(event),
             message_id=message_id,
             user_id=user_id,
             display_name=await self._name_of(group_id, user_id),
-            text=message["text"],
+            text=text,
+            image_file=image_file,
         )
         self.group_log.add(group_id, record)
         if self.observer is not None:
             await self.observer.note_message(group_id, record)
 
+        if kind != TEXT_KIND:
+            return
         if not (is_self_mentioned(event) or is_called_by_name(event, self.call_names)):
             return
         if is_redelivery(event) and self._is_too_old(event):
@@ -234,6 +246,19 @@ class EventDispatcher:
         if await self._send_itinerary(group_id, event):
             return
         await self._answer_mention(group_id, event, record)
+
+    async def _content_of(
+        self, group_id: str, event: dict[str, Any], kind: str
+    ) -> tuple[str, str | None]:
+        """Return the text the record holds for a message and, for a photo, the name of the
+        file it was kept in (None when it could not be kept)."""
+        message = event["message"]
+        if kind != IMAGE_KIND or self.media is None:
+            return message["text"], None
+        if is_external_image(event):
+            return IMAGE_RECORD_TEXT, None
+        saved = await self.media.save_image(group_id, str(message.get("id", "")))
+        return IMAGE_RECORD_TEXT, saved
 
     async def _answer_mention(
         self, group_id: str, event: dict[str, Any], record: GroupMessage

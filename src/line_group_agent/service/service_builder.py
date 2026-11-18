@@ -32,6 +32,9 @@ from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.itinerary.itinerary_tools import itinerary_tools
 from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.line_api.push_quota import PushQuota
+from line_group_agent.media.image_store import ImageStore
+from line_group_agent.media.media_recorder import MediaRecorder
+from line_group_agent.media.photo_picker import PhotoPicker
 from line_group_agent.polls.poll_book import PollBook
 from line_group_agent.polls.poll_tools import poll_tools
 from line_group_agent.records.group_conversations import GroupConversations
@@ -85,8 +88,16 @@ def build_app(config: AgentConfig) -> FastAPI:
         extra_tools=client_tools.definitions(),
     )
     deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
+    images = ImageStore(config.state_dir)
     answerer = Answerer(
-        config, caller, group_log, conversations, books, deleter, client_tools=client_tools
+        config,
+        caller,
+        group_log,
+        conversations,
+        books,
+        deleter,
+        client_tools=client_tools,
+        photos=PhotoPicker(images, config.max_images_per_turn),
     )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
@@ -122,6 +133,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         deleter=deleter,
         postbacks=PostbackHandler(polls),
         itineraries=itineraries,
+        media=_media_recorder(config, line, images),
         notifier=notifier,
     )
     return create_app(
@@ -131,6 +143,16 @@ def build_app(config: AgentConfig) -> FastAPI:
         on_close=[line.close, client.close],
         background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
     )
+
+
+def _media_recorder(
+    config: AgentConfig, line: LineClient, images: ImageStore
+) -> MediaRecorder | None:
+    """Return the recorder of photos, or None when `max_images_per_turn` is 0 (photos are
+    then neither kept nor recorded)."""
+    if config.max_images_per_turn == 0:
+        return None
+    return MediaRecorder(line, images, config.max_image_edge_pixels)
 
 
 def _read_intro(config: AgentConfig) -> str:

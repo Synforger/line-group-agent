@@ -23,6 +23,7 @@ When a member takes a message back in LINE (unsend), the agent deletes it the sa
 |---|---|
 | The group's record (`messages.jsonl`) | The messages are removed |
 | The conversation record (`conversations/g-<groupId>.jsonl`) | Where the messages appear in what was sent to the model, their text is replaced by `[deleted]`; a reply of the bot that was deleted is replaced the same way. The model's thinking blocks are removed from its answers |
+| The photo files (`groups/<groupId>/images/`) | The files of deleted photo messages are removed, and in the conversation record the caption and the image of a deleted photo are replaced by `[deleted]` |
 | The running conversation | Rebuilt from the changed record |
 
 Both files are replaced whole (written to a temporary file, then renamed over the old

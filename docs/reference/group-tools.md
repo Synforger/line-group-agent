@@ -64,3 +64,21 @@ The model then tells the group.
   than one per person) are taken by the person who paid, so nobody is asked for a fraction of
   a yen. The result says how many yen that was and the bot is told to mention it
 - Nothing is stored: the tool calculates from what the model gives it each time
+
+## Photos
+
+A photo a member sends to the group is kept (the agent reads it from LINE as soon as it
+arrives, since LINE keeps the content only for a while) and the record gets a line `[写真]` for
+it. When the bot is next called, the newest photos sent since its last turn (at most
+`max_images_per_turn`, 3 by default) are given to the model together with the group's messages,
+so a member can ask "what is this?" about a photo.
+
+- A photo is scaled down before it is kept when its long side is over `max_image_edge_pixels`
+  (1568 by default) or its file is large (it is then saved again as JPEG), so a large photo
+  costs little. A smaller one is kept as it is
+- Photos live in `groups/<groupId>/images/` and, as part of what was sent to the model, in the
+  conversation record. A photo is deleted with its message (on request, when unsent, or after
+  `retention_days`; see [Deleting messages](deleting.md))
+- `max_images_per_turn` set to `0` turns this off: photos are neither kept nor recorded
+- Only JPEG, PNG, GIF and WEBP photos are used. Anything else, or a photo LINE no longer gives,
+  is still recorded as `[写真]`, without a file

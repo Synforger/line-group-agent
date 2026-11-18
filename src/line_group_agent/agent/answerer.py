@@ -26,6 +26,7 @@ from line_group_agent.agent.prompt import (
     SEARCH_HISTORY_TOOL_NAME,
     SHOW_CARDS_TOOL_NAME,
     build_envelope,
+    build_user_content,
     extract_reply,
     format_search_results,
 )
@@ -37,6 +38,7 @@ from line_group_agent.cards.card_input import parse_cards
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.line_api.quick_reply import QuickReplyItem
+from line_group_agent.media.photo_picker import PhotoPicker
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -80,6 +82,7 @@ class Answerer:
         deleter: MessageDeleter,
         *,
         client_tools: ClientTools | None = None,
+        photos: PhotoPicker | None = None,
     ) -> None:
         self.config = config
         self.caller = caller
@@ -88,6 +91,7 @@ class Answerer:
         self.books = books
         self.deleter = deleter
         self.client_tools = client_tools or ClientTools()
+        self.photos = photos
 
     async def answer(
         self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
@@ -116,9 +120,9 @@ class Answerer:
             logger.info("answer: budget left is below one mention; not calling the API")
             return Answer(budget.exhausted_text, record=False)
 
-        envelope = self._envelope(conversation, mention)
-        messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": envelope}])
-        conversation.add_user(envelope)
+        turn = self._user_turn(conversation, mention)
+        messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": turn}])
+        conversation.add_user(turn)
         conversation.last_turn_message_id = mention.message_id
 
         texts: list[str] = []
@@ -171,20 +175,28 @@ class Answerer:
             return Answer(self.config.budget.exhausted_text)
         return Answer(self.config.error_text or None)
 
-    def _envelope(self, conversation: GroupConversation, mention: GroupMessage) -> str:
+    def _user_turn(
+        self, conversation: GroupConversation, mention: GroupMessage
+    ) -> str | list[dict[str, Any]]:
+        """Return the user turn for this mention: the envelope, with the photos sent since
+        the bot's last turn attached when photos are read."""
         group_id = conversation.group_id
-        if conversation.starts_new_generation:
-            recent = self.group_log.list_recent(
-                group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
-            )
-            return build_envelope(recent, mention, summary=conversation.pending_summary)
         since = self.group_log.list_since_turn(
             group_id,
             self.config.max_catch_up_messages,
             after_message_id=conversation.last_turn_message_id,
             exclude_message_id=mention.message_id,
         )
-        return build_envelope(since, mention)
+        if conversation.starts_new_generation:
+            recent = self.group_log.list_recent(
+                group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
+            )
+            envelope = build_envelope(recent, mention, summary=conversation.pending_summary)
+        else:
+            envelope = build_envelope(since, mention)
+        if self.photos is None:
+            return envelope
+        return build_user_content(envelope, self.photos.pick(group_id, since))
 
     def _can_afford_request(self, conversation: GroupConversation) -> bool:
         estimate = request_estimate_usd(self.config, context_tokens=conversation.context_tokens)

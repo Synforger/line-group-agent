@@ -48,6 +48,9 @@ DEFAULT_WAIT_MIN_PUSH_LEFT = 20
 DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR = 20
 DEFAULT_RATE_LIMIT_TEXT = "You have asked a lot in the last hour. Please try again a little later."
 DEFAULT_RETENTION_DAYS = 30
+DEFAULT_MAX_IMAGES_PER_TURN = 3
+DEFAULT_IMAGE_EDGE_PIXELS = 1568
+MIN_IMAGE_EDGE_PIXELS = 64
 
 
 class ConfigError(ValueError):
@@ -141,6 +144,8 @@ class AgentConfig:
     max_mentions_per_user_per_hour: int
     rate_limit_text: str
     retention_days: int
+    max_images_per_turn: int
+    max_image_edge_pixels: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -230,6 +235,15 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         ),
         rate_limit_text=_optional(raw, "rate_limit_text", str, DEFAULT_RATE_LIMIT_TEXT),
         retention_days=_at_least(raw, "retention_days", DEFAULT_RETENTION_DAYS),
+        max_images_per_turn=_at_least(
+            raw, "max_images_per_turn", DEFAULT_MAX_IMAGES_PER_TURN, minimum=0
+        ),
+        max_image_edge_pixels=_at_least(
+            raw,
+            "max_image_edge_pixels",
+            DEFAULT_IMAGE_EDGE_PIXELS,
+            minimum=MIN_IMAGE_EDGE_PIXELS,
+        ),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),

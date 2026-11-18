@@ -4,10 +4,12 @@ from line_group_agent.events.event_fields import (
     age_seconds_of,
     group_id_of,
     is_called_by_name,
+    is_external_image,
     is_redelivery,
     is_self_mentioned,
     is_text_message,
     local_time_of,
+    message_kind_of,
     postback_of,
     quote_token_of,
     strip_call_name,
@@ -166,3 +168,22 @@ def test_a_call_name_at_either_end_is_removed_with_the_punctuation_next_to_it() 
     assert strip_call_name("itinerary、 SORA!", ("sora",)) == "itinerary"
     assert strip_call_name("itinerary", ("Sora",)) == "itinerary"
     assert strip_call_name("itinerary", ()) == "itinerary"
+
+
+def test_text_and_image_messages_are_the_kinds_the_agent_records() -> None:
+    assert message_kind_of(text_event()) == "text"
+    image = {**text_event(), "message": {"type": "image", "id": "1"}}
+    assert message_kind_of(image) == "image"
+
+
+def test_other_messages_and_events_have_no_kind() -> None:
+    assert message_kind_of({**text_event(), "message": {"type": "sticker", "id": "1"}}) is None
+    assert message_kind_of({"type": "join"}) is None
+    assert message_kind_of({"type": "postback", "message": {"type": "image"}}) is None
+
+
+def test_an_image_at_an_outside_address_is_external() -> None:
+    line = {"message": {"type": "image", "contentProvider": {"type": "line"}}}
+    outside = {"message": {"type": "image", "contentProvider": {"type": "external"}}}
+    assert not is_external_image(line) and is_external_image(outside)
+    assert not is_external_image({"message": {"type": "image"}})
