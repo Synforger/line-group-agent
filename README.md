@@ -24,8 +24,8 @@ short answer. It stays quiet otherwise.
   one a name, a price, a short line, an optional picture and an "open" button that
   goes to its page. Up to 10 cards; see [Cards](docs/reference/cards.md).
 - **Runs polls and finds a date.** Ask it for a vote and it sends a card with one button
-  per option; pressing a button counts a vote without the model and without a message in
-  the group. A date poll lets each member mark every date that suits them. See
+  per option; pressing a button counts a vote without the model and shows "<option> に投票" in
+  the presser's name; pressing another option switches the vote. A date poll lets each member mark every date that suits them. See
   [Tools for the group](docs/reference/group-tools.md).
 - **Keeps the trip itinerary and splits costs.** The group has one itinerary the bot
   reads and rewrites on request (the last five versions are kept), and a mention with only
@@ -74,7 +74,7 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │                                  ├─▶ show_cards (candidates as cards)
                                                                │                                  └─▶ polls, itinerary, split_bill, send_location, suggest_replies
                                                                └─ 4. reply: text, cards, polls and places, quick replies (or push if the reply token expired)
-                                                               (button presses on a poll card arrive as postbacks and are counted without a reply)
+                                                               (button presses on a poll card arrive as postbacks: counted without the model; a pick-several poll answers the presser's marks in one line)
 ```
 
 - The server listens on loopback only. Reaching it from LINE (HTTPS on a public

@@ -68,6 +68,8 @@ The press arrives as a postback event. The log tells which case it is:
 - `poll: a press came without a user id; not counted`: LINE did not say who pressed, and the
   agent cannot count a vote it cannot attribute. Votes work only when LINE puts the member's
   user id in the event
+- `poll: a vote was unchanged`: the member pressed the option they had already picked in a
+  one-pick poll; the vote stays (ask the bot to withdraw it)
 - `poll: a vote was ignored`: the poll is closed, or its card is older than the polls kept (the
   newest 50)
 - No line at all: the group is not in `allowed_group_ids`, or the webhook is not receiving
