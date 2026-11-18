@@ -162,3 +162,27 @@ async def test_a_failed_push_with_cards_carries_the_status_and_no_body() -> None
         await line.push("Cgroup", "secret words", CARDS)
     assert error.value.status == 400
     assert "secret words" not in str(error.value) and "example.com" not in str(error.value)
+
+
+@pytest.mark.parametrize(("status", "expected"), [(200, True), (404, False), (500, None)])
+async def test_is_member_reads_the_member_profile_status(
+    status: int, expected: bool | None
+) -> None:
+    line, seen = client_answering(status, {"displayName": "Aki"})
+    assert await line.is_member("Cg", "U1") is expected
+    assert seen[0].method == "GET"
+    assert seen[0].url.path == "/v2/bot/group/Cg/member/U1"
+
+
+async def test_leave_group_posts_to_the_leave_endpoint() -> None:
+    line, seen = client_answering(200)
+    await line.leave_group("Cg")
+    assert seen[0].method == "POST"
+    assert seen[0].url.path == "/v2/bot/group/Cg/leave"
+
+
+async def test_a_failed_leave_raises_with_the_status() -> None:
+    line, _ = client_answering(403)
+    with pytest.raises(LineApiError) as raised:
+        await line.leave_group("Cg")
+    assert raised.value.status == 403

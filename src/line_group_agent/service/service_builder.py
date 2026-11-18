@@ -49,6 +49,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         group_log,
         answerer,
         redelivered_answer_window_seconds=config.redelivered_answer_window_seconds,
+        required_member_user_id=config.required_member_user_id,
     )
     return create_app(
         secrets.line_channel_secret,

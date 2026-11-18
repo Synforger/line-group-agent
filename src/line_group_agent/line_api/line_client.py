@@ -1,4 +1,5 @@
-"""The calls this agent makes to the LINE Messaging API: reply, push, member name.
+"""The calls this agent makes to the LINE Messaging API: reply, push, member name,
+membership check and leaving a group.
 
 A reply or push carries the answer's text and, after it, one Flex Message holding the
 cards (LINE takes up to 5 messages per call; this sends at most 2). Called by the
@@ -22,6 +23,7 @@ REQUEST_TIMEOUT_SECONDS = 15.0
 TEXT_LIMIT_UTF16_UNITS = 5000
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
+HTTP_NOT_FOUND = 404
 TOKEN_REFUSED_MARKER = "reply token"
 
 
@@ -109,6 +111,27 @@ class LineClient:
             return None
         name = response.json().get("displayName")
         return name if isinstance(name, str) else None
+
+    async def is_member(self, group_id: str, user_id: str) -> bool | None:
+        """Return whether the user is in the group: True, False, or None when LINE
+        gave no clear answer (an error or no connection)."""
+        try:
+            response = await self._http.get(
+                f"/v2/bot/group/{group_id}/member/{user_id}", headers=self._headers
+            )
+        except httpx.HTTPError:
+            return None
+        if response.status_code == HTTP_OK:
+            return True
+        if response.status_code == HTTP_NOT_FOUND:
+            return False
+        return None
+
+    async def leave_group(self, group_id: str) -> None:
+        """Make the bot leave the group."""
+        response = await self._post(f"/v2/bot/group/{group_id}/leave", {}, "leave")
+        if response.status_code != HTTP_OK:
+            raise LineApiError("leave", response.status_code)
 
     async def close(self) -> None:
         """Close the HTTP connection pool."""
