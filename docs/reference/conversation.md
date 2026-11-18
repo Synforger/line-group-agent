@@ -39,7 +39,11 @@ candidates the bot offered, and what it was asked to do. It is written by one ex
 that may not use tools. The request is not added to the conversation record, but its cost
 counts for the group. The summary is saved in the group's journal, and the next mention opens
 the new conversation with it. The record keeps going in the same file; a new conversation
-starts at a user row whose text begins with `Summary of the conversation so far`.
+starts at a user row whose text begins with `Summary of the conversation so far`. The
+generation number is taken from the journal, so it stays right after old rows are deleted.
+
+A conversation that had messages deleted from it is rolled over at once, whatever its size;
+see [Deleting messages](deleting.md).
 
 If the summary cannot be made (the group is out of budget, the API fails, the answer is
 empty) the conversation carries on and the agent tries again after the next answer or patrol.

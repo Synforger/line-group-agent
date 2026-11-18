@@ -2,8 +2,9 @@
 
 A group is known when it is on the configured list or already has a record in the
 state folder, and from the moment the bot first handles one of its messages. The
-number of known groups divides the monthly budget. Called by the answerer, the
-rollover, the group watcher and the tab list.
+number of known groups divides the monthly budget. Opening one also settles its
+generation number and any summary still waiting. Called by the answerer, the rollover,
+the group watcher, the retention sweeper and the tab list.
 """
 
 from __future__ import annotations
@@ -52,13 +53,26 @@ class GroupConversations:
         record = self.state_dir / "conversations" / f"{record_name_of(group_id)}.jsonl"
         conversation = GroupConversation(group_id, record)
         conversation.open()
-        waiting = self.journal.read(group_id, conversation.generation)
-        if waiting is not None:
-            conversation.set_pending_summary(*waiting)
+        self._place_in_journal(conversation)
         last_time = self.group_log.last_message_time(group_id)
         if last_time is not None:
             conversation.last_activity_at = _parse_time(last_time)
         return conversation
+
+    def _place_in_journal(self, conversation: GroupConversation) -> None:
+        """Take the generation number from the journal, which outlives expired rows: the
+        latest summary closes generation N; the conversation is in N + 1 once it opened
+        with that summary, and in N with the summary waiting until it does."""
+        closed = self.journal.latest_generation(conversation.group_id)
+        latest = None if closed is None else self.journal.read(conversation.group_id, closed)
+        if closed is None or latest is None:
+            return
+        summary, written_at = latest
+        if conversation.has_opened_with(summary):
+            conversation.generation = closed + 1
+        else:
+            conversation.generation = closed
+            conversation.set_pending_summary(summary, written_at)
 
 
 def _parse_time(text: str) -> datetime | None:

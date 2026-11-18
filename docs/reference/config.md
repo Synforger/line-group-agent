@@ -30,6 +30,14 @@ folder that holds the file. Settings are not taken from environment variables.
 | `redelivered_answer_window_seconds` | `600` | A mention that LINE redelivers (after a failed delivery) is answered only when it is at most this old; an older one is recorded but not answered. A message already in the record is never handled twice |
 | `required_member_user_id` | none | A LINE user id (yours, as shown in LINE Developers). When set, the bot leaves a group that is not in `allowed_group_ids` as soon as it hears from it, unless this user is a member; a group whose membership LINE cannot confirm is left too. Groups that pass are logged with their id, as before |
 | `allow_groups_with_required_member` | `false` | With `required_member_user_id` set: a group that user is in counts as allowed (recorded and answered) without being listed. The membership is asked again after an hour, and the bot leaves the group once that user is gone. Every message of such a group is recorded from the moment the bot joins, so tell the group first |
+| `alert_user_id` | `required_member_user_id` | A LINE user id that gets a short push message when the agent cannot do its job; see [Alerts](notices-and-limits.md#alerts). Without it (and without `required_member_user_id`) nothing is sent |
+| `intro_file` | none | Text file whose content is sent when the bot joins a group it may answer in; see [The introduction](notices-and-limits.md#the-introduction). Unset: no introduction. A file that cannot be read stops the agent at start |
+| `error_text` | `Something went wrong, so I could not answer. Please try again in a bit.` | Sent when no answer could be made for a reason other than the budget or the API failing. Empty: nothing is sent |
+| `wait_text` | `Looking that up, one moment.` | Sent first when the answer will take a while, and the answer follows as a push message. Empty: never sent |
+| `wait_min_push_left` | `20` | The wait text is sent only when LINE reports at least this many messages left this month (0 or more) |
+| `max_mentions_per_user_per_hour` | `20` | Most mentions of the bot one person gets answered in an hour (1 or more) |
+| `rate_limit_text` | `You have asked a lot in the last hour. Please try again a little later.` | Sent the first time a person passes the limit. Empty: nothing is sent |
+| `retention_days` | `30` | Group messages and conversation rows older than this are deleted once a day, except the running conversation's; the summaries are kept. See [Deleting messages](deleting.md) (1 or more) |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

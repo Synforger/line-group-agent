@@ -40,6 +40,12 @@ DEFAULT_TABS_FILE_NAME = "tabs.json"
 DEFAULT_CURRENCY = "JPY"
 DEFAULT_ESTIMATED_INPUT_TOKENS = 20000
 DEFAULT_EXHAUSTED_TEXT = "This month's budget is used up."
+DEFAULT_ERROR_TEXT = "Something went wrong, so I could not answer. Please try again in a bit."
+DEFAULT_WAIT_TEXT = "Looking that up, one moment."
+DEFAULT_WAIT_MIN_PUSH_LEFT = 20
+DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR = 20
+DEFAULT_RATE_LIMIT_TEXT = "You have asked a lot in the last hour. Please try again a little later."
+DEFAULT_RETENTION_DAYS = 30
 
 
 class ConfigError(ValueError):
@@ -121,6 +127,14 @@ class AgentConfig:
     redelivered_answer_window_seconds: int
     required_member_user_id: str | None
     allow_groups_with_required_member: bool
+    alert_user_id: str | None
+    intro_file: Path | None
+    error_text: str
+    wait_text: str
+    wait_min_push_left: int
+    max_mentions_per_user_per_hour: int
+    rate_limit_text: str
+    retention_days: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -194,6 +208,18 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         allow_groups_with_required_member=_optional(
             raw, "allow_groups_with_required_member", bool, False
         ),
+        alert_user_id=_optional(raw, "alert_user_id", str, None),
+        intro_file=_optional_path(raw, "intro_file", base_dir, None),
+        error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
+        wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
+        wait_min_push_left=_at_least(
+            raw, "wait_min_push_left", DEFAULT_WAIT_MIN_PUSH_LEFT, minimum=0
+        ),
+        max_mentions_per_user_per_hour=_at_least(
+            raw, "max_mentions_per_user_per_hour", DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR
+        ),
+        rate_limit_text=_optional(raw, "rate_limit_text", str, DEFAULT_RATE_LIMIT_TEXT),
+        retention_days=_at_least(raw, "retention_days", DEFAULT_RETENTION_DAYS),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),
@@ -283,9 +309,18 @@ def _budget(section: dict[str, Any]) -> BudgetConfig:
     )
 
 
-def _optional_path(raw: dict[str, Any], key: str, base_dir: Path, default: Path) -> Path:
+def _optional_path[T: Path | None](
+    raw: dict[str, Any], key: str, base_dir: Path, default: T
+) -> Path | T:
     value = _optional(raw, key, str, None)
     return default if value is None else base_dir / Path(value)
+
+
+def _at_least(raw: dict[str, Any], key: str, default: int, *, minimum: int = 1) -> int:
+    value: int = _optional(raw, key, int, default)
+    if value < minimum:
+        raise ConfigError(f"{key} must be at least {minimum}")
+    return value
 
 
 def _required(section: dict[str, Any], key: str, kind: type) -> Any:

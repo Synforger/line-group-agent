@@ -23,7 +23,16 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
   あれば画像・ページへ飛ぶ「開く」ボタン。最大 10 枚。[カード](docs/reference/cards.md)
   を見てください。
 - **送るのは決めた所だけ。** model が `<reply>…</reply>` の中に書いた文だけがグループに
-  送られます。考えの途中は送られません。
+  送られます。考えの途中は送られません。返事は素の文 (LINE は Markdown を表示しません) で、
+  呼んだ発言を引用して返します。
+- **時間がかかる時・答えられない時はグループに一言。** 遅くなりそうな答えの前に「ちょっと
+  待ってね」の文、答えられなかった時は決まった一言を送ります。1 人が 1 時間に呼べる回数にも
+  上限があります。[通知・上限・知らせ](docs/reference/notices-and-limits.md)を見てください。
+- **頼まれたら消す。** 自分の発言を「消して」と頼むか送信取消すると、グループの記録と会話から
+  消え、その発言を除いた要約から会話が新しく始まります。決めた日数 (既定 30 日) より古い記録も
+  消えます (今の会話と要約は除く)。[発言を消す](docs/reference/deleting.md)を見てください。
+- **止まった時は知らせる。** Claude API の失敗が続いた時・今月の額が上限の 80% を超えた時・
+  LINE への送信が失敗した時に、短い push の通知が届きます。
 - **月の予算の中で動く。** 毎回の額を API の usage から数えます。API を呼ぶ前に
   「今月の額 + 1 回の最大の見積もり」が上限を超えないか、全体とそのグループ (上限を
   グループの数で割った額) の両方で確かめ、超えるなら決まった文だけを返します。
@@ -39,6 +48,7 @@ LINE グループ ──▶ LINE Platform ──https──▶ あなたの HTTP
                                                                      │  2. 許したグループなら発言を記録
                                                                      │  3. メンションならグループの会話を続けて Claude API へ ──▶ web 検索 / web fetch
                                                                      │                               ├─▶ search_history (ローカルの記録)
+                                                                     │                               ├─▶ delete_messages (呼んだ人自身の発言・bot の返事)
                                                                      │                               └─▶ show_cards (候補をカードで)
                                                                      └─ 4. reply (文のあとにカード。token が切れていたら push)
 ```
@@ -133,6 +143,8 @@ agent は使った額を数えますが、料金は調べません。料金の�
   置いてください。
 - 返事は LINE の reply token で送り、無料です。model の答えが token の寿命 (約 1 分) より
   遅れた時は push で送り直し、これはアカウントの月の送信数に数えられます。
+- 答えに web の作業が要る時は、先に短い「待ってね」の文を reply token で送り、答えは push で
+  送ります。LINE が今月の送信の残りを十分に返す間だけ (`wait_min_push_left`) 送ります。
 
 ## 書く file
 
@@ -140,9 +152,9 @@ agent は使った額を数えますが、料金は調べません。料金の�
 
 | Path | 中身 |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、bot が送った返事 (`from_bot` の印付き。カードを付けた返事は、末尾にその名前を並べた 1 行が付く)。1 行 1 発言。追記だけ |
+| `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、bot が送った返事 (`from_bot` の印付き。カードを付けた返事は、末尾にその名前を並べた 1 行が付く)。1 行 1 発言。追記される。消した発言と `retention_days` より古い発言は取り除かれる |
 | `conversations/g-<groupId>.jsonl` | グループの続いている会話: model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
-| `groups/<groupId>/journal/<date>-gen<N>.md` | グループの会話の N 本目を入れ替えた時に書いた要約 |
+| `groups/<groupId>/journal/<date>-gen<N>.md` | グループの会話の N 本目を入れ替えた時に書いた要約。消されない |
 | `groups/<groupId>/spend.json` | グループの今月の額 (`spend.json` と同じ形) |
 | `spend.json` | agent 全体の今月の額: `{"month", "spent", "limit", "currency", "updated_at"}`。毎回全体を書き直す |
 | `tabs.json` | グループの一覧と、文脈の量・額・世代。chat の client が読む (path は `tabs_file`) |

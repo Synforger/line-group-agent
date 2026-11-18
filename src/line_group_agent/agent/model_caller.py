@@ -3,7 +3,8 @@ text, tools, cache settings), the error handling and the cost counting.
 
 Called by the answerer for each request of a mention and by the rollover for a
 summary. The answer comes back as the plain dict the API sent, and is not recorded
-here.
+here. An observer (the alert notifier) is told how each call went and what the month
+has cost so far.
 """
 
 from __future__ import annotations
@@ -13,7 +14,11 @@ from typing import Any, Protocol
 
 import anthropic
 
-from line_group_agent.agent.prompt import search_history_tool, show_cards_tool
+from line_group_agent.agent.prompt import (
+    delete_messages_tool,
+    search_history_tool,
+    show_cards_tool,
+)
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.spend.pricing import to_currency, usage_cost_usd
 from line_group_agent.spend.spend_books import SpendBooks
@@ -28,6 +33,14 @@ class MessagesClient(Protocol):
     def messages(self) -> Any: ...
 
 
+class CallObserver(Protocol):
+    """What the caller reports: how a call went, and the whole month's spend and limit."""
+
+    async def note_api_result(self, *, is_ok: bool) -> None: ...
+
+    async def note_spend(self, spent: float, limit: float) -> None: ...
+
+
 class ModelCaller:
     """Sends a conversation to the model and counts what the answer cost."""
 
@@ -37,11 +50,14 @@ class ModelCaller:
         client: MessagesClient,
         system_text: str,
         books: SpendBooks,
+        *,
+        observer: CallObserver | None = None,
     ) -> None:
         self.config = config
         self.client = client
         self.system_text = system_text
         self.books = books
+        self.observer = observer
         self.tools = self._build_tools()
         # Prompt caching: one breakpoint after the fixed part (tools and system) and a
         # top-level one that moves to the end of each request, so a request reads
@@ -77,20 +93,30 @@ class ModelCaller:
             response = await self.client.messages.create(**request)
         except anthropic.APIStatusError as error:
             logger.warning("model: API refused the request (status %d)", error.status_code)
+            await self._note_result(is_ok=False)
             return None
         except anthropic.APIError as error:
             logger.warning("model: API call failed (%s)", type(error).__name__)
+            await self._note_result(is_ok=False)
             return None
+        await self._note_result(is_ok=True)
         answer: dict[str, Any] = response.to_dict()
         cost = usage_cost_usd(
             answer.get("usage") or {}, self.config.prices, cache_ttl=self.config.cache_ttl
         )
         self.books.add(group_id, to_currency(cost, self.config.budget))
+        if self.observer is not None:
+            await self.observer.note_spend(self.books.overall.spent, self.books.overall_limit())
         return answer
+
+    async def _note_result(self, *, is_ok: bool) -> None:
+        if self.observer is not None:
+            await self.observer.note_api_result(is_ok=is_ok)
 
     def _build_tools(self) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = [
             search_history_tool(self.config.history_search_limit),
+            delete_messages_tool(self.config.history_search_limit),
             show_cards_tool(),
         ]
         search = self.config.web_search

@@ -1,8 +1,9 @@
 """The calls this agent makes to the LINE Messaging API: reply, push, member name,
-group name, membership check and leaving a group.
+group name, membership check, leaving a group and the message quota.
 
-A reply or push carries the answer's text and, after it, one Flex Message holding the
-cards (LINE takes up to 5 messages per call; this sends at most 2). Called by the
+A reply or push carries the answer's text (which can quote a message) and, after it,
+one Flex Message holding the cards (LINE takes up to 5 messages per call; this sends
+at most 2). Called by the
 answer sender. Errors carry the HTTP status only, never a token or what was sent.
 """
 
@@ -25,6 +26,8 @@ HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 TOKEN_REFUSED_MARKER = "reply token"
+LIMITED_QUOTA = "limited"
+UNLIMITED_MESSAGES = 10**9
 
 
 class LineApiError(RuntimeError):
@@ -65,15 +68,18 @@ class LineClient:
         cards: Sequence[Card] = (),
         *,
         with_images: bool = True,
+        quote_token: str | None = None,
     ) -> ReplyResult:
-        """Answer an event with its reply token: the text first, then the cards.
+        """Answer an event with its reply token: the text first (quoting the message
+        `quote_token` belongs to, when given), then the cards.
 
         `TOKEN_REFUSED` means the token was used or too old, so the caller can push.
         `MESSAGE_REFUSED` means LINE took the token but not the message, which only
         happens when cards were sent: the caller may try the cards without images.
         A 400 on a text-only reply is always reported as a refused token.
         """
-        body = {"replyToken": reply_token, "messages": _messages(text, cards, with_images)}
+        messages = _messages(text, cards, with_images, quote_token)
+        body = {"replyToken": reply_token, "messages": messages}
         response = await self._post("/v2/bot/message/reply", body, "reply")
         if response.status_code == HTTP_OK:
             return ReplyResult.SENT
@@ -90,10 +96,11 @@ class LineClient:
         cards: Sequence[Card] = (),
         *,
         with_images: bool = True,
+        quote_token: str | None = None,
     ) -> None:
-        """Send the text, then the cards, to a group (counts against the account's
-        monthly message quota)."""
-        body = {"to": to, "messages": _messages(text, cards, with_images)}
+        """Send the text (quoting a message when `quote_token` is given), then the cards,
+        to a group or a user (counts against the account's monthly message quota)."""
+        body = {"to": to, "messages": _messages(text, cards, with_images, quote_token)}
         headers = {"X-Line-Retry-Key": str(uuid.uuid4())}
         response = await self._post("/v2/bot/message/push", body, "push", headers)
         if response.status_code != HTTP_OK:
@@ -146,9 +153,31 @@ class LineClient:
         if response.status_code != HTTP_OK:
             raise LineApiError("leave", response.status_code)
 
+    async def get_remaining_messages(self) -> int | None:
+        """Return how many more messages the account may send this month, a very large
+        number when it has no limit, or None when LINE does not say."""
+        quota = await self._get_json("/v2/bot/message/quota")
+        if quota is None:
+            return None
+        if quota.get("type") != LIMITED_QUOTA:
+            return UNLIMITED_MESSAGES
+        used = await self._get_json("/v2/bot/message/quota/consumption")
+        limit, total = quota.get("value"), (used or {}).get("totalUsage")
+        if not _is_count(limit) or not _is_count(total):
+            return None
+        return max(0, limit - total)
+
     async def close(self) -> None:
         """Close the HTTP connection pool."""
         await self._http.aclose()
+
+    async def _get_json(self, path: str) -> dict[str, Any] | None:
+        try:
+            response = await self._http.get(path, headers=self._headers)
+            body = response.json() if response.status_code == HTTP_OK else None
+        except (httpx.HTTPError, ValueError):
+            return None
+        return body if isinstance(body, dict) else None
 
     async def _post(
         self,
@@ -164,13 +193,22 @@ class LineClient:
             raise LineApiError(action, 0) from error
 
 
-def _messages(text: str | None, cards: Sequence[Card], with_images: bool) -> list[dict[str, Any]]:
+def _messages(
+    text: str | None, cards: Sequence[Card], with_images: bool, quote_token: str | None
+) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     if text:
-        messages.append({"type": "text", "text": fit_text(text)})
+        message: dict[str, Any] = {"type": "text", "text": fit_text(text)}
+        if quote_token:
+            message["quoteToken"] = quote_token
+        messages.append(message)
     if cards:
         messages.append(build_flex_message(list(cards), with_images=with_images))
     return messages
+
+
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _is_token_refusal(response: httpx.Response) -> bool:

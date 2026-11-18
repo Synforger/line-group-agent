@@ -2,7 +2,9 @@
 journal, and let it open the next generation with the next user turn.
 
 Called by the group watcher, after an answer (the conversation is full enough) and at
-each patrol (the group has been quiet for a long time). The summary is made by one
+each patrol (the group has been quiet for a long time). A conversation marked after a
+message was deleted rolls over at the next call whatever its size, and its summary is
+asked not to repeat what was deleted. The summary is made by one
 extra request on top of the conversation, with no tools allowed, and is not added to
 the conversation record; its cost counts against the group.
 """
@@ -15,7 +17,7 @@ from datetime import datetime
 
 from line_group_agent._common.context_usage import is_idle_rollover_due, is_rollover_due
 from line_group_agent.agent.model_caller import ModelCaller
-from line_group_agent.agent.prompt import SUMMARY_REQUEST
+from line_group_agent.agent.prompt import summary_request
 from line_group_agent.agent.tool_pairing import pair_tool_calls
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
@@ -74,6 +76,8 @@ class Rollover:
     def _is_due(self, conversation: GroupConversation, *, is_idle: bool) -> bool:
         if conversation.pending_summary is not None or not conversation.messages:
             return False
+        if conversation.must_roll_over:
+            return True
         if conversation.context_tokens is None:
             return False
         settings = self.settings.current()
@@ -95,7 +99,13 @@ class Rollover:
             logger.info("rollover: budget left is below one summary; not calling the API")
             return None
         messages = pair_tool_calls(
-            [*conversation.messages, {"role": "user", "content": SUMMARY_REQUEST}]
+            [
+                *conversation.messages,
+                {
+                    "role": "user",
+                    "content": summary_request(after_deletion=conversation.must_roll_over),
+                },
+            ]
         )
         answer = await self.caller.create(
             group_id,

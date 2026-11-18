@@ -41,3 +41,30 @@ def test_the_service_builds_its_parts_and_writes_the_tab_list(tmp_path: Path) ->
     build_app(config)
     tabs = json.loads(config.tabs_file.read_text())
     assert [tab["name"] for tab in tabs["tabs"]] == ["g-callowed"]
+
+
+def build_with(tmp_path: Path, **overrides: object) -> None:
+    from line_group_agent.service.service_builder import build_app
+    from tests.fakes import make_config
+
+    config = make_config(tmp_path, **overrides)
+    config.persona_file.write_text("You are a helper.")
+    for secret_file in (
+        config.anthropic_api_key_file,
+        config.line_channel_secret_file,
+        config.line_channel_access_token_file,
+    ):
+        secret_file.write_text("secret\n")
+    build_app(config)
+
+
+def test_an_intro_file_that_cannot_be_read_stops_the_start(tmp_path: Path) -> None:
+    from line_group_agent.config.agent_config import ConfigError
+
+    with pytest.raises(ConfigError, match="intro_file"):
+        build_with(tmp_path, intro_file="missing.txt")
+
+
+def test_an_intro_file_that_can_be_read_lets_the_service_start(tmp_path: Path) -> None:
+    (tmp_path / "intro.txt").write_text("Hello.\n")
+    build_with(tmp_path, intro_file="intro.txt")

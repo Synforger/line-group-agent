@@ -103,3 +103,70 @@ async def test_a_reply_that_fails_otherwise_is_not_retried_or_pushed(
     assert line.calls == []
     assert "status 500" in caplog.text
     assert "Two options." not in caplog.text and "example.com" not in caplog.text
+
+
+async def test_the_text_and_the_cards_are_made_plain_before_they_are_sent() -> None:
+    line = FakeLine()
+    card = Card("**Gion Inn**", "- near the station", "https://example.com/1")
+    sent = await AnswerSender(line).send(GROUP, TOKEN, Answer("# Hotels\n- **Gion Inn**", [card]))
+    [call] = line.calls
+    assert call.text == "Hotels\n・Gion Inn"
+    assert (call.cards[0].title, call.cards[0].text) == ("Gion Inn", "・near the station")
+    assert sent is not None and sent.text == "Hotels\n・Gion Inn"
+
+
+async def test_the_reply_and_the_push_quote_the_message() -> None:
+    line = FakeLine()
+    await AnswerSender(line).send(GROUP, TOKEN, Answer("Hi."), quote_token="q1")
+    line = FakeLine(reply_accepts=False)
+    await AnswerSender(line).send(GROUP, TOKEN, Answer("Hi."), quote_token="q1")
+    assert [(c.kind, c.quote_token) for c in line.calls] == [("reply", "q1"), ("push", "q1")]
+
+
+async def test_a_push_the_quote_makes_fail_is_sent_again_without_it() -> None:
+    line = FakeLine(reply_accepts=False, push_statuses=[400, None])
+    sent = await AnswerSender(line).send(GROUP, None, BOTH, quote_token="q1")
+    assert sent == BOTH
+    assert [(c.cards, c.quote_token) for c in line.calls] == [(CARDS, "q1"), (CARDS, None)]
+
+
+async def test_a_push_that_fails_even_without_the_quote_and_cards_is_raised() -> None:
+    line = FakeLine(push_statuses=[400, 400])
+    with pytest.raises(LineApiError):
+        await AnswerSender(line).send(GROUP, None, Answer("Hi."), quote_token="q1")
+    assert [c.quote_token for c in line.calls] == ["q1", None]
+
+
+class RecordingNotifier:
+    def __init__(self) -> None:
+        self.failures = 0
+
+    async def note_send_failed(self) -> None:
+        self.failures += 1
+
+
+async def test_a_reply_that_failed_is_reported_to_the_alert_notifier() -> None:
+    class Failing(FakeLine):
+        async def reply(self, *args: object, **kwargs: object) -> ReplyResult:
+            raise LineApiError("reply", 500)
+
+    notifier = RecordingNotifier()
+    sender = AnswerSender(Failing(), notifier=notifier)  # type: ignore[arg-type]
+    assert await sender.send(GROUP, TOKEN, BOTH) is None
+    assert notifier.failures == 1
+
+
+async def test_a_push_that_failed_is_reported_once_and_still_raised() -> None:
+    notifier = RecordingNotifier()
+    sender = AnswerSender(FakeLine(push_statuses=[500]), notifier=notifier)  # type: ignore[arg-type]
+    with pytest.raises(LineApiError):
+        await sender.send(GROUP, None, BOTH)
+    assert notifier.failures == 1
+
+
+async def test_a_card_or_quote_that_was_loosened_is_not_reported_as_a_failure() -> None:
+    notifier = RecordingNotifier()
+    line = FakeLine(push_statuses=[400, 400, None])
+    sender = AnswerSender(line, notifier=notifier)  # type: ignore[arg-type]
+    await sender.send(GROUP, None, BOTH, quote_token="q1")
+    assert notifier.failures == 0

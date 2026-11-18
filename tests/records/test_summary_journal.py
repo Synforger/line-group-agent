@@ -32,3 +32,12 @@ def test_the_latest_file_of_a_generation_counts(tmp_path: Path) -> None:
 def test_a_group_id_cannot_leave_the_folder(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         SummaryJournal(tmp_path).write("../x", 1, "x", date(2026, 11, 18))
+
+
+def test_the_latest_generation_is_the_highest_number_in_the_journal(tmp_path: Path) -> None:
+    journal = SummaryJournal(tmp_path)
+    assert journal.latest_generation("Ca") is None
+    journal.write("Ca", 2, "two", date(2026, 11, 17))
+    journal.write("Ca", 10, "ten", date(2026, 11, 18))
+    journal.write("Ca", 3, "three", date(2026, 11, 18))
+    assert journal.latest_generation("Ca") == 10

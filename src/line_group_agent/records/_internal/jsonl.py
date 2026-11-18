@@ -1,4 +1,5 @@
-"""Append-only JSON Lines files: one object per line, each line written in one call.
+"""JSON Lines files: one object per line. Rows are appended one write at a time; a
+file is only ever rewritten whole, through a temporary file and a rename.
 
 Used by the group record and the conversation record.
 """
@@ -7,8 +8,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+from line_group_agent._common.atomic_write import write_text_atomically
 
 
 def append_json_line(path: Path, row: dict[str, Any]) -> None:
@@ -54,3 +58,11 @@ def read_json_lines(path: Path) -> list[dict[str, Any]]:
             if isinstance(row, dict):
                 rows.append(row)
     return rows
+
+
+def replace_json_lines(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    """Replace the whole file with `rows`. A reader sees the old file or the new one."""
+    text = "".join(
+        json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows
+    )
+    write_text_atomically(path, text)

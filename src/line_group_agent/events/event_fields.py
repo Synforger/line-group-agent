@@ -30,6 +30,20 @@ def is_text_message(event: dict[str, Any]) -> bool:
     )
 
 
+def quote_token_of(event: dict[str, Any]) -> str | None:
+    """Return the token that quotes the event's message in a reply, or None without one."""
+    token = (event.get("message") or {}).get("quoteToken")
+    return token if isinstance(token, str) and token else None
+
+
+def unsent_message_id_of(event: dict[str, Any]) -> str | None:
+    """Return the id of the message an unsend event took back, or None for any other event."""
+    if event.get("type") != "unsend":
+        return None
+    message_id = (event.get("unsend") or {}).get("messageId")
+    return message_id if isinstance(message_id, str) and message_id else None
+
+
 def is_self_mentioned(event: dict[str, Any]) -> bool:
     """Return whether the message mentions this bot (LINE marks it `isSelf: true`)."""
     message = event.get("message") or {}

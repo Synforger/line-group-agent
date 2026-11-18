@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from line_group_agent.agent.prompt import SUMMARY_REQUEST
+from line_group_agent.agent.prompt import SUMMARY_REQUEST, summary_request
 from line_group_agent.records.conversation_log import SUMMARY_PREFIX
 from line_group_agent.records.group_log import GroupMessage
 from tests.fakes import answer, text_answer
@@ -275,3 +275,44 @@ async def test_a_five_minute_cache_is_sent_when_the_config_says_so(tmp_path: Pat
     request = world.client.messages.requests[0]
     assert request["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert request["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+
+
+async def test_a_conversation_after_a_deletion_rolls_over_at_once_whatever_its_size(
+    tmp_path: Path,
+) -> None:
+    summary = text_answer("Decided: Kyoto.", message_id="msg_s", usage=usage(2_000))
+    world = build_world(tmp_path, [reply("one", 1, 1_000), summary])
+    secret = said(world, 1, "our secret plan")
+    await world.answerer.answer(GROUP, said(world, 2, "@bot first"))
+    world.deleter.delete(GROUP, {secret.message_id})
+    conversation = world.conversations.get(GROUP)
+    assert conversation.must_roll_over
+
+    assert await world.rollover.roll_over_if_full(conversation)
+    request = world.client.messages.requests[1]
+    assert request["messages"][-1] == {
+        "role": "user",
+        "content": summary_request(after_deletion=True),
+    }
+    assert "secret" not in json.dumps(request["messages"])
+    assert conversation.pending_summary == "Decided: Kyoto." and not conversation.must_roll_over
+
+
+async def test_a_summary_that_could_not_be_made_after_a_deletion_is_tried_again(
+    tmp_path: Path,
+) -> None:
+    world = build_world(tmp_path, [reply("one", 1, 1_000)])
+    secret = said(world, 1, "our secret plan")
+    await world.answerer.answer(GROUP, said(world, 2, "@bot first"))
+    world.deleter.delete(GROUP, {secret.message_id})
+    conversation = world.conversations.get(GROUP)
+    assert not await world.rollover.roll_over_if_full(conversation)
+    assert conversation.must_roll_over
+    world.client.messages.answers.append(text_answer("Summary.", message_id="msg_s"))
+    assert await world.rollover.roll_over_if_idle(conversation)
+
+
+async def test_a_conversation_nothing_was_deleted_from_is_not_forced(tmp_path: Path) -> None:
+    world = build_world(tmp_path, [reply("one", 1, 1_000)])
+    await world.answerer.answer(GROUP, said(world, 1, "@bot first"))
+    assert not await world.rollover.roll_over_if_full(world.conversations.get(GROUP))

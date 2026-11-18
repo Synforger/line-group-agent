@@ -4,7 +4,9 @@ Everything the agent writes is under `state_dir`, except the tab list (`tabs_fil
 
 ## `groups/<groupId>/messages.jsonl`
 
-Every text message of an allowed group, one JSON object per line, appended only:
+Every text message of an allowed group, one JSON object per line, appended to. A message is
+removed when it is [deleted](deleting.md) or older than `retention_days`; the file is then
+replaced whole:
 
 ```json
 {"time": "2026-11-18T12:00:00+09:00", "message_id": "444573844083572737", "user_id": "U0123…", "display_name": "Aki", "text": "How about Kyoto?"}
@@ -33,16 +35,22 @@ one row per line, appended only and written one row per write:
 - A `user` row's `content` is the text sent (it never starts with an XML tag) or
   the `tool_result` blocks of a history search
 - An `assistant` row's `message` is the API's answer as it came, with its `id`. The
-  conversation is rebuilt from these rows at start, so they are never edited
+  conversation is rebuilt from these rows at start, so they are edited only to
+  [delete a message](deleting.md)
 - A new conversation starts at a `user` row whose text begins with
   `Summary of the conversation so far`; the rows before it are the earlier conversation
 - When the agent starts and the file does not end in a newline, it writes one
   first, so a row cut by a crash never runs into the next
+- Rows older than `retention_days` that do not belong to the running conversation are
+  deleted once a day, and rows are changed when a message is deleted. Either way the file
+  is replaced whole (a temporary file, then a rename), so it can become shorter
 
 ## `groups/<groupId>/journal/<date>-gen<N>.md`
 
 The summary that closed conversation number `N` of the group, written when it was rolled
-over. The file holds the summary text only. The next conversation opens with it.
+over. The file holds the summary text only. The next conversation opens with it. These
+files are never deleted by the agent, and the highest `N` tells which generation a
+conversation is in.
 
 ## `groups/<groupId>/spend.json`
 

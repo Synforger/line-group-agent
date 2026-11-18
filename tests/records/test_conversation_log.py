@@ -104,3 +104,18 @@ def test_the_rows_can_be_read_back_and_adding_returns_the_row(tmp_path: Path) ->
     log.add_assistant({"id": "msg_1", "role": "assistant", "content": []})
     assert log.read_rows()[0] == row
     assert [r["type"] for r in log.read_rows()] == ["user", "assistant"]
+
+
+def test_replacing_the_rows_writes_the_record_whole_and_leaves_no_temporary_file(
+    tmp_path: Path,
+) -> None:
+    log = ConversationLog(tmp_path / "c.jsonl", clock=lambda: FIXED)
+    log.open()
+    log.add_user("one")
+    log.add_user("two")
+    kept = log.read_rows()[1:]
+    log.replace_rows(kept)
+    assert rows(log.path) == kept
+    assert not list(tmp_path.glob("*.tmp")) and not list(tmp_path.glob(".*"))
+    log.add_user("three")
+    assert [r["message"]["content"] for r in rows(log.path)] == ["two", "three"]

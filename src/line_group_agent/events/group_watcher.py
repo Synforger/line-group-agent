@@ -3,7 +3,8 @@
 Called by the event dispatcher for each recorded message and after each answer, and by
 the patrol at an interval. It registers a group when it first speaks, looks up the
 group's name, notes when the group last spoke, rolls full or long-quiet conversations
-over, re-reads the settings file and rewrites the tab list.
+over (and one that had messages deleted), deletes what has outlived the retention
+period, re-reads the settings file and rewrites the tab list.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupMessage
+from line_group_agent.records.retention_sweeper import RetentionSweeper
 from line_group_agent.tabs.tabs_file import TabsFile
 
 logger = logging.getLogger(__name__)
@@ -42,12 +44,15 @@ class GroupWatcher:
         rollover: Rollover,
         settings: SettingsStore,
         clock: Callable[[], datetime],
+        *,
+        retention: RetentionSweeper | None = None,
     ) -> None:
         self.conversations = conversations
         self.tabs = tabs
         self.names = names
         self.rollover = rollover
         self.settings = settings
+        self.retention = retention
         self._clock = clock
 
     async def note_message(self, group_id: str, message: GroupMessage) -> None:
@@ -65,11 +70,19 @@ class GroupWatcher:
         if await self.rollover.roll_over_if_full(conversation):
             self.tabs.refresh()
 
+    async def after_deletion(self, group_id: str) -> None:
+        """Roll the group's conversation over at once if messages were deleted from it,
+        then rewrite the tab list."""
+        await self.after_answer(group_id)
+
     async def patrol(self) -> None:
-        """One round over every known group: names, long-quiet rollovers, the tab list."""
+        """One round over every known group: names, long-quiet rollovers, expired
+        messages (once a day), the tab list."""
         for conversation in self.conversations.list():
             await self._update_title(conversation)
             await self.rollover.roll_over_if_idle(conversation)
+        if self.retention is not None:
+            await self.retention.sweep_if_due()
         self.tabs.refresh()
 
     async def _update_title(self, conversation: GroupConversation) -> None:

@@ -152,3 +152,45 @@ def test_relative_paths_are_taken_from_the_config_files_folder(
 def test_a_tilde_is_not_expanded_from_the_environment(tmp_path: Path) -> None:
     config = make_config(tmp_path, persona_file="~/persona.md")
     assert config.persona_file == tmp_path / "~" / "persona.md"
+
+
+def test_the_v03_settings_have_their_defaults(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    assert config.alert_user_id is None and config.intro_file is None
+    assert config.error_text and config.wait_text and config.rate_limit_text
+    assert config.wait_min_push_left == 20
+    assert config.max_mentions_per_user_per_hour == 20
+    assert config.retention_days == 30
+
+
+def test_the_v03_settings_can_be_set_and_the_intro_path_is_read_from_the_config_folder(
+    tmp_path: Path,
+) -> None:
+    config = make_config(
+        tmp_path,
+        alert_user_id="Uop",
+        intro_file="intro.txt",
+        error_text="E",
+        wait_text="W",
+        wait_min_push_left=0,
+        max_mentions_per_user_per_hour=5,
+        rate_limit_text="R",
+        retention_days=7,
+    )
+    assert config.alert_user_id == "Uop" and config.intro_file == tmp_path / "intro.txt"
+    assert (config.error_text, config.wait_text, config.rate_limit_text) == ("E", "W", "R")
+    assert config.wait_min_push_left == 0
+    assert config.max_mentions_per_user_per_hour == 5 and config.retention_days == 7
+
+
+@pytest.mark.parametrize(
+    "key", ["max_mentions_per_user_per_hour", "retention_days", "wait_min_push_left"]
+)
+def test_the_counts_cannot_be_below_their_minimum(tmp_path: Path, key: str) -> None:
+    with pytest.raises(ConfigError, match=key):
+        make_config(tmp_path, **{key: -1})
+    with pytest.raises(ConfigError, match=key):
+        make_config(tmp_path, **{key: "many"})
+    if key != "wait_min_push_left":
+        with pytest.raises(ConfigError, match=key):
+            make_config(tmp_path, **{key: 0})
