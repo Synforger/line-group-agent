@@ -27,6 +27,7 @@ def test_defaults_match_the_agreed_receiving_point(tmp_path: Path) -> None:
     assert config.allow_groups_with_required_member is False
     assert config.help_file is None
     assert config.help_keywords == ("help",)
+    assert config.call_names == ()
     assert config.web_search is not None and config.web_search.max_uses == 3
     assert config.budget.currency == "JPY"
     assert config.budget.exhausted_text == "This month's budget is used up."

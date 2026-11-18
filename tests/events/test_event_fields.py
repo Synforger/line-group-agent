@@ -3,6 +3,7 @@ from datetime import datetime
 from line_group_agent.events.event_fields import (
     age_seconds_of,
     group_id_of,
+    is_called_by_name,
     is_redelivery,
     is_self_mentioned,
     is_text_message,
@@ -88,3 +89,47 @@ def test_an_unsend_event_gives_the_id_of_the_message_taken_back() -> None:
     assert unsent_message_id_of({"type": "message", "unsend": {"messageId": "m7"}}) is None
     assert unsent_message_id_of({"type": "unsend", "unsend": {}}) is None
     assert unsent_message_id_of({"type": "unsend"}) is None
+
+
+NAMES = ("ソラ", "そら", "sora")
+
+
+def said(text: str) -> dict:
+    return {"type": "message", "message": {"type": "text", "id": "1", "text": text}}
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ソラ、明日の天気は?",
+        "そら 店探して",
+        "SORA what's good here",
+        "明日どこ行く?ソラ",
+        "sora!",
+        "  ソラ  ",
+    ],
+)
+def test_a_name_at_the_start_or_end_calls_the_bot(text: str) -> None:
+    assert is_called_by_name(said(text), NAMES)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "昨日ソラに聞いたら便利だった",
+        "ソラって便利だね",
+        "Soraya Live",
+        "malsora の薬",
+        "普通",
+        "",
+    ],
+)
+def test_a_name_in_the_middle_or_inside_a_word_does_not(text: str) -> None:
+    assert not is_called_by_name(said(text), NAMES)
+
+
+def test_no_names_means_no_call() -> None:
+    assert not is_called_by_name(said("ソラ、ねえ"), ())
