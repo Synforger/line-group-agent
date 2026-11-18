@@ -37,7 +37,9 @@ and the answer goes out as the reply, as usual. An empty `wait_text` turns it of
 One person may mention the bot `max_mentions_per_user_per_hour` times in any hour. A
 mention over the limit is recorded but not answered. The first time a person passes the
 limit, the bot sends `rate_limit_text`; it does not repeat it until that person has been
-answered again.
+answered again. A message that only holds a call name (see `call_name_anywhere` in
+[the configuration](config.md)) counts the same way, but one over the limit is skipped without
+the notice.
 
 ## The introduction
 

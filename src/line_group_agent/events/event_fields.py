@@ -122,6 +122,20 @@ def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
     return False
 
 
+def is_name_in_text(event: dict[str, Any], names: tuple[str, ...]) -> bool:
+    """Return whether a text message holds one of `names` anywhere (any case).
+
+    A Latin name does not count when it is part of a longer word ("Sora" in "Soraya"
+    or "mysora"); a name written in other scripts counts wherever it stands. Used for a
+    message that may only talk about the bot, so the model decides whether to answer.
+    """
+    text = (event.get("message") or {}).get("text")
+    if not isinstance(text, str):
+        return False
+    body = text.casefold()
+    return any(_holds_name(body, name.casefold()) for name in names if name)
+
+
 def strip_call_name(text: str, names: tuple[str, ...]) -> str:
     """Return `text` without a call name at its start or its end (any case), with the
     spaces and punctuation next to it. Text that holds no call name is returned as is."""
@@ -136,6 +150,22 @@ def strip_call_name(text: str, names: tuple[str, ...]) -> str:
 
 def _runs_on(neighbour: str) -> bool:
     return bool(neighbour) and bool(re.match(r"[a-z0-9]", neighbour))
+
+
+def _holds_name(body: str, key: str) -> bool:
+    """Whether `key` stands in `body` at least once without running on into a Latin word."""
+    start = body.find(key)
+    while start != -1:
+        end = start + len(key)
+        before = body[start - 1] if start > 0 else ""
+        after = body[end : end + 1]
+        is_run_on = (_runs_on(key[0]) and _runs_on(before)) or (
+            _runs_on(key[-1]) and _runs_on(after)
+        )
+        if not is_run_on:
+            return True
+        start = body.find(key, start + 1)
+    return False
 
 
 def is_redelivery(event: dict[str, Any]) -> bool:

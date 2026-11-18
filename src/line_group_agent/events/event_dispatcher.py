@@ -12,6 +12,11 @@ told once, and not answered); when the answerer says the answer will take a whil
 A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
 without the model.
 
+With `call_name_anywhere`, a text message that holds a call name anywhere else (neither a
+mention nor a name at its start or end) is also read by the model, which may stay silent
+when the message is not addressed to the bot. For such a message the keyword shortcuts are
+not used, and a person over the hourly limit is skipped without being told.
+
 Other things a member does are recorded or counted without an answer: a photo is kept (made
 small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
 a message taken back (unsend) is deleted from the records, and a button press on a poll
@@ -60,6 +65,7 @@ from line_group_agent.events.event_fields import (
     group_id_of,
     is_called_by_name,
     is_external_image,
+    is_name_in_text,
     is_redelivery,
     is_self_mentioned,
     local_time_of,
@@ -100,7 +106,12 @@ class MentionAnswerer(Protocol):
     """What the dispatcher needs from the answerer."""
 
     async def answer(
-        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        self,
+        group_id: str,
+        mention: GroupMessage,
+        *,
+        on_slow: SlowNotice | None = None,
+        is_name_only: bool = False,
     ) -> Answer: ...
 
 
@@ -130,6 +141,7 @@ class EventDispatcher:
         redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         required_member_user_id: str | None = None,
         call_names: tuple[str, ...] = (),
+        call_name_anywhere: bool = False,
         allow_groups_with_required_member: bool = False,
         observer: GroupObserver | None = None,
         texts: NoticeTexts | None = None,
@@ -157,6 +169,7 @@ class EventDispatcher:
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
+        self.call_name_anywhere = call_name_anywhere
         self.allow_groups_with_required_member = allow_groups_with_required_member
         self.observer = observer
         self._clock = clock
@@ -241,22 +254,29 @@ class EventDispatcher:
 
         if kind != TEXT_KIND:
             return
-        if not (is_self_mentioned(event) or is_called_by_name(event, self.call_names)):
+        is_called = is_self_mentioned(event) or is_called_by_name(event, self.call_names)
+        is_name_only = (
+            not is_called and self.call_name_anywhere and is_name_in_text(event, self.call_names)
+        )
+        if not (is_called or is_name_only):
             return
         if is_redelivery(event) and self._is_too_old(event):
             logger.info("answer: a redelivered mention is past the answer window; not answered")
             return
         verdict = MentionVerdict.ANSWER if self.limiter is None else self.limiter.check(user_id)
         if verdict is not MentionVerdict.ANSWER:
-            if verdict is MentionVerdict.REFUSE_AND_TELL:
+            if is_name_only:
+                logger.info("answer: a member passed the hourly limit; a name in text skipped")
+            elif verdict is MentionVerdict.REFUSE_AND_TELL:
                 await self._tell_rate_limit(group_id, event)
             return
-        if self._asks_for_help(event):
-            await self._send_help(group_id, event)
-            return
-        if await self._send_itinerary(group_id, event):
-            return
-        await self._answer_mention(group_id, event, record)
+        if not is_name_only:
+            if self._asks_for_help(event):
+                await self._send_help(group_id, event)
+                return
+            if await self._send_itinerary(group_id, event):
+                return
+        await self._answer_mention(group_id, event, record, is_name_only=is_name_only)
 
     async def _content_of(
         self, group_id: str, event: dict[str, Any], kind: str
@@ -274,7 +294,7 @@ class EventDispatcher:
         return IMAGE_RECORD_TEXT, saved
 
     async def _answer_mention(
-        self, group_id: str, event: dict[str, Any], record: GroupMessage
+        self, group_id: str, event: dict[str, Any], record: GroupMessage, *, is_name_only: bool
     ) -> None:
         is_token_used = False
 
@@ -286,7 +306,9 @@ class EventDispatcher:
                 is_token_used = True
 
         try:
-            answer = await self.answerer.answer(group_id, record, on_slow=announce_wait)
+            answer = await self.answerer.answer(
+                group_id, record, on_slow=announce_wait, is_name_only=is_name_only
+            )
         except Exception as error:  # a failed answer is told to the group, not dropped
             logger.error("answer: failed (%s)", type(error).__name__)
             answer = Answer(self.texts.error or None)

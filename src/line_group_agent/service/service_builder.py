@@ -124,6 +124,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         redelivered_answer_window_seconds=config.redelivered_answer_window_seconds,
         required_member_user_id=config.required_member_user_id,
         call_names=config.call_names,
+        call_name_anywhere=config.call_name_anywhere,
         allow_groups_with_required_member=config.allow_groups_with_required_member,
         observer=watcher,
         texts=NoticeTexts(

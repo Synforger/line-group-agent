@@ -17,9 +17,27 @@ like a chat you keep open. It is kept in the group's record, so it survives a re
   conversation is only ever added to. That keeps the start of each request identical to the
   last one, so the API's prompt cache reads it instead of processing it again.
 
+The record keeps the model's thinking blocks, but they are not sent again after their turn:
+their signature is tied to the system text and the tool list of the request that made them,
+so a changed persona, tool list or version would make the API refuse the whole conversation.
+Inside one turn, between a tool call and its result, they are sent back as they came.
+This holds for the request that writes a summary too.
+
 A tool call that never got its result (for example when the round limit was reached) is
 answered with an error result when the conversation is sent again, so one bad turn does not
 stop the group.
+
+## A name in the middle of a message
+
+With `call_name_anywhere` on, a message that holds a call name anywhere (not a LINE mention,
+and not at its start or end, which still call the bot as before) is added as a turn too. The
+turn tells the model that the message may not be addressed to it, and gives it the tool
+`stay_silent`. When the model calls it, nothing is sent to the group and the bot's reply is
+not recorded, but the turn stays in the conversation: the bot remembers it read the message,
+and the next turn carries only what was said after it. A message that mentions the bot or
+has a name at either end is always answered; `stay_silent` is refused there. The tool is
+sent with every request while the setting is on, so the start of the request, and with it the
+prompt cache, does not change from one turn to the next.
 
 ## How full the conversation is
 

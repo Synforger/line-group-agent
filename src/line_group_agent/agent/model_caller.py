@@ -1,11 +1,11 @@
 """One call to the Messages API for a group: the fixed request parts (model, system
 text, tools, cache settings), the error handling and the cost counting.
 
-The tools sent are the built-in ones, the group tools given as `extra_tools` and the
-web tools. Called by the answerer for each request of a mention and by the rollover for a
-summary. The answer comes back as the plain dict the API sent, and is not recorded
-here. An observer (the alert notifier) is told how each call went and what the month
-has cost so far.
+The tools sent are the built-in ones (with `stay_silent` when names are read anywhere in
+a message), the group tools given as `extra_tools` and the web tools. Called by the
+answerer for each request of a mention and by the rollover for a summary. The answer
+comes back as the plain dict the API sent, and is not recorded here. An observer (the
+alert notifier) is told how each call went and what the month has cost so far.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from line_group_agent.agent.prompt import (
     delete_messages_tool,
     search_history_tool,
     show_cards_tool,
+    stay_silent_tool,
 )
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.spend.pricing import to_currency, usage_cost_usd
@@ -124,6 +125,10 @@ class ModelCaller:
             show_cards_tool(),
             *self._extra_tools,
         ]
+        if self.config.call_name_anywhere:
+            # Always in the list while the setting is on, so the tools (the start of the
+            # cached prefix) never differ between one turn and the next.
+            tools.append(stay_silent_tool())
         search = self.config.web_search
         if search is not None:
             tools.append({"type": search.type, "name": "web_search", "max_uses": search.max_uses})

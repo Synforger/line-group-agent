@@ -28,6 +28,7 @@ def test_defaults_match_the_agreed_receiving_point(tmp_path: Path) -> None:
     assert config.help_file is None
     assert config.help_keywords == ("help",)
     assert config.call_names == ()
+    assert config.call_name_anywhere is False
     assert config.web_search is not None and config.web_search.max_uses == 3
     assert config.budget.currency == "JPY"
     assert config.budget.exhausted_text == "This month's budget is used up."
@@ -93,6 +94,12 @@ def test_the_cache_ttl_is_five_minutes_or_one_hour(tmp_path: Path) -> None:
     assert make_config(tmp_path, cache_ttl="5m").cache_ttl == "5m"
     with pytest.raises(ConfigError, match="cache_ttl"):
         make_config(tmp_path, cache_ttl="2h")
+
+
+def test_names_are_read_anywhere_only_when_asked_for(tmp_path: Path) -> None:
+    assert make_config(tmp_path, call_name_anywhere=True).call_name_anywhere is True
+    with pytest.raises(ConfigError, match="call_name_anywhere"):
+        make_config(tmp_path, call_name_anywhere="yes")
 
 
 def test_a_wrong_kind_is_refused(tmp_path: Path) -> None:

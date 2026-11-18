@@ -24,6 +24,7 @@ from line_group_agent.agent.prompt import (
     message_element,
     photo_caption,
 )
+from line_group_agent.agent.thinking_blocks import THINKING_BLOCK_TYPES
 from line_group_agent.cards.card_record import CARD_RECORD_LABEL
 from line_group_agent.media.location_record import LOCATION_RECORD_LABEL
 from line_group_agent.polls.poll_text import DATE_POLL_RECORD_LABEL, POLL_RECORD_LABEL
@@ -36,7 +37,6 @@ REPLY_EXTRA_LABELS = (
     DATE_POLL_RECORD_LABEL,
     LOCATION_RECORD_LABEL,
 )
-THINKING_BLOCK_TYPES = ("thinking", "redacted_thinking")
 ELEMENT_TAGS = ("message", "mention")
 
 

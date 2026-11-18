@@ -91,7 +91,9 @@ async def test_the_conversation_is_rebuilt_from_the_record_after_a_restart(tmp_p
     assert restarted.conversations.get(GROUP).context_tokens == 1000
 
 
-async def test_the_assistant_turns_go_back_exactly_as_they_were_recorded(tmp_path: Path) -> None:
+async def test_the_assistant_turns_go_back_as_they_were_recorded_except_for_thinking(
+    tmp_path: Path,
+) -> None:
     blocks = [
         {"type": "thinking", "thinking": "hm", "signature": "sig=="},
         {"type": "text", "text": "<reply>ok</reply>"},
@@ -100,7 +102,7 @@ async def test_the_assistant_turns_go_back_exactly_as_they_were_recorded(tmp_pat
     await world.answerer.answer(GROUP, said(world, 1, "@bot first"))
     await world.answerer.answer(GROUP, said(world, 2, "@bot second"))
     sent = world.client.messages.requests[1]["messages"][1]
-    assert sent == {"role": "assistant", "content": blocks}
+    assert sent == {"role": "assistant", "content": [blocks[1]]}
     assert [r["message"]["content"] for r in rows(world) if r["type"] == "assistant"][0] == blocks
 
 
