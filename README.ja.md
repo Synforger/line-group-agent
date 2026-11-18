@@ -14,6 +14,10 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
   するので、「ホテルの話どうなったっけ」に後から答えられます。
 - **調べて答える。** web 検索と web ページの読み込み (Claude API の server 側の道具) と、
   グループ自身の記録の検索。
+- **候補をカードで見せる。** 候補を 2 件以上並べる時は、横にスワイプするカードの束
+  (LINE の Flex Message の carousel) で送れます。候補ごとに、名前・値段・短い一言・
+  あれば画像・ページへ飛ぶ「開く」ボタン。最大 10 枚。[カード](docs/reference/cards.md)
+  を見てください。
 - **送るのは決めた所だけ。** model が `<reply>…</reply>` の中に書いた文だけがグループに
   送られます。考えの途中は送られません。
 - **月の予算の中で動く。** 毎回の額を API の usage から数えます。API を呼ぶ前に
@@ -30,8 +34,9 @@ LINE グループ ──▶ LINE Platform ──https──▶ あなたの HTTP
                                                                      │  1. 大きさの上限・署名の確認・すぐ 200
                                                                      │  2. 許したグループなら発言を記録
                                                                      │  3. メンションなら Claude API へ ──▶ web 検索 / web fetch
-                                                                     │                               └─▶ search_history (ローカルの記録)
-                                                                     └─ 4. reply (token が切れていたら push)
+                                                                     │                               ├─▶ search_history (ローカルの記録)
+                                                                     │                               └─▶ show_cards (候補をカードで)
+                                                                     └─ 4. reply (文のあとにカード。token が切れていたら push)
 ```
 
 - server は loopback でだけ待ち受けます。LINE から届く HTTPS の入口 (reverse proxy・
@@ -125,7 +130,7 @@ agent は使った額を数えますが、料金は調べません。料金の�
 
 | Path | 中身 |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | グループの text の発言全部。1 行 1 発言 (時刻・message id・user id・取れたら表示名・本文)。追記だけ |
+| `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、bot が送った返事 (`from_bot` の印付き。カードを付けた返事は、末尾にその名前を並べた 1 行が付く)。1 行 1 発言。追記だけ |
 | `conversations/<tab_name>.jsonl` | model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
 | `spend.json` | 今月の額: `{"month", "spent", "limit", "currency", "updated_at"}`。毎回全体を書き直す |
 

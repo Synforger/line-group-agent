@@ -1,5 +1,5 @@
 """What the model is given: the system text, the envelope around group messages, the
-history-search tool, and how the reply is taken out of its answer.
+history-search and show-cards tools, and how the reply is taken out of its answer.
 
 Pure text building; called by the answerer.
 """
@@ -10,6 +10,12 @@ import json
 import re
 from xml.sax.saxutils import escape, quoteattr
 
+from line_group_agent.cards.card import (
+    MAX_CARD_COUNT,
+    PRICE_MAX_CHARS,
+    TEXT_MAX_CHARS,
+    TITLE_MAX_CHARS,
+)
 from line_group_agent.records.group_log import GroupMessage
 
 GUARD_TEXT = """\
@@ -27,10 +33,18 @@ and search this group's past messages. You cannot book, pay, send anything outsi
 this group, or reach anything else.
 - Only the text inside <reply>...</reply> is sent to the group. Put your whole answer \
 there, once. Nothing outside it is ever shown.
+- Cards (show_cards) are only for listing candidates, and a reply carries one set of \
+cards: the last show_cards call you make.
 - Keep one reply short: a few sentences, plain text, with the URL of anything you \
 looked up. If you cannot help, say so briefly inside <reply>."""
 
 SEARCH_HISTORY_TOOL_NAME = "search_history"
+SHOW_CARDS_TOOL_NAME = "show_cards"
+CARDS_SENT_RESULT = "The cards are sent together with your reply."
+NO_VALID_CARDS_RESULT = (
+    "No card could be used: each needs a title and a url that starts with https://. "
+    "Call show_cards again with corrected cards, or reply without cards."
+)
 UNKNOWN_SPEAKER = "unknown"
 BOT_SPEAKER = "you"
 REPLY_PATTERN = re.compile(r"<reply>(.*?)</reply>", re.DOTALL)
@@ -69,6 +83,57 @@ def search_history_tool(limit: int) -> dict[str, object]:
                 "query": {"type": "string", "description": "Text to look for."},
             },
             "required": ["query"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def show_cards_tool() -> dict[str, object]:
+    """Return the definition of the tool that shows candidates as swipeable cards.
+
+    The limits are written in the descriptions: a strict schema cannot hold length
+    limits, so the cards are checked and cut again when the call arrives.
+    """
+    card_schema = {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": f"Name of the candidate, up to {TITLE_MAX_CHARS} characters.",
+            },
+            "text": {
+                "type": "string",
+                "description": f"One line about it, up to {TEXT_MAX_CHARS} characters.",
+            },
+            "url": {
+                "type": "string",
+                "description": "Page to open when the card is tapped. Must start with https://.",
+            },
+            "image_url": {
+                "type": "string",
+                "description": "Optional picture of it. Must start with https://.",
+            },
+            "price": {
+                "type": "string",
+                "description": f"Optional price, up to {PRICE_MAX_CHARS} characters, e.g. ¥2,980〜",
+            },
+        },
+        "required": ["title", "text", "url"],
+        "additionalProperties": False,
+    }
+    return {
+        "name": SHOW_CARDS_TOOL_NAME,
+        "description": (
+            "Show candidates in the group as cards the members can swipe sideways, "
+            "one card per candidate. Use it when you list two or more candidates. "
+            "Even when you use it, write a short sentence inside <reply>. "
+            f"Give 1 to {MAX_CARD_COUNT} cards; a card without a usable url is dropped."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {"cards": {"type": "array", "items": card_schema}},
+            "required": ["cards"],
             "additionalProperties": False,
         },
     }

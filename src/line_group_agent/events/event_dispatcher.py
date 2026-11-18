@@ -2,7 +2,8 @@
 
 The webhook endpoint queues events here. For an allowed group, each text message is
 recorded, and a message that mentions the bot is answered through the answerer. The
-reply, once sent, is recorded too, so the next mention sees what the bot said.
+reply, once sent, is recorded too (with a line naming any cards that went with it), so
+the next mention sees what the bot said.
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
 
@@ -20,6 +21,9 @@ import uuid
 from datetime import datetime
 from typing import Any, Protocol
 
+from line_group_agent.agent.answerer import Answer
+from line_group_agent.cards.card_record import format_card_record
+from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
     age_seconds_of,
     group_id_of,
@@ -28,7 +32,7 @@ from line_group_agent.events.event_fields import (
     is_text_message,
     local_time_of,
 )
-from line_group_agent.line_api.line_client import LineApiError, LineClient
+from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
 logger = logging.getLogger(__name__)
@@ -40,7 +44,7 @@ DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 class MentionAnswerer(Protocol):
     """What the dispatcher needs from the answerer."""
 
-    async def answer(self, group_id: str, mention: GroupMessage) -> str | None: ...
+    async def answer(self, group_id: str, mention: GroupMessage) -> Answer: ...
 
 
 class EventDispatcher:
@@ -59,6 +63,7 @@ class EventDispatcher:
         self.line = line
         self.group_log = group_log
         self.answerer = answerer
+        self._sender = AnswerSender(line)
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(QUEUE_CAPACITY)
         self._worker: asyncio.Task[None] | None = None
@@ -124,12 +129,13 @@ class EventDispatcher:
         if is_redelivery(event) and self._is_too_old(event):
             logger.info("answer: a redelivered mention is past the answer window; not answered")
             return
-        text = await self.answerer.answer(group_id, record)
-        if text is None:
+        answer = await self.answerer.answer(group_id, record)
+        if answer.text is None and not answer.cards:
             logger.info("answer: no reply to send")
             return
-        if await self._send(group_id, event.get("replyToken"), text):
-            self.group_log.add(group_id, _bot_reply(text))
+        sent = await self._sender.send(group_id, event.get("replyToken"), answer)
+        if sent is not None:
+            self.group_log.add(group_id, _bot_reply(sent))
 
     def _is_too_old(self, event: dict[str, Any]) -> bool:
         age = age_seconds_of(event, datetime.now().astimezone())
@@ -160,28 +166,16 @@ class EventDispatcher:
             self._names[key] = await self.line.get_member_name(group_id, user_id)
         return self._names[key]
 
-    async def _send(self, group_id: str, reply_token: Any, text: str) -> bool:
-        """Send the answer; return whether LINE accepted it."""
-        # Push only when LINE refused the reply token; on any other failure the reply
-        # may have been delivered, and a push would send the answer twice.
-        if isinstance(reply_token, str) and reply_token:
-            try:
-                if await self.line.reply(reply_token, text):
-                    return True
-            except LineApiError as error:
-                logger.warning("reply: failed (status %d); not retrying", error.status)
-                return False
-            logger.info("reply: the reply token was refused; sending by push instead")
-        await self.line.push(group_id, text)
-        return True
 
-
-def _bot_reply(text: str) -> GroupMessage:
+def _bot_reply(sent: Answer) -> GroupMessage:
+    parts = [sent.text] if sent.text else []
+    if sent.cards:
+        parts.append(format_card_record(sent.cards))
     return GroupMessage(
         time=datetime.now().astimezone().isoformat(timespec="seconds"),
         message_id=f"bot-{uuid.uuid4()}",
         user_id=None,
         display_name=None,
-        text=text,
+        text="\n".join(parts),
         from_bot=True,
     )

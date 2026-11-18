@@ -4,10 +4,12 @@ from typing import Any
 import httpx
 import pytest
 
+from line_group_agent.cards.card import Card
 from line_group_agent.line_api.line_client import (
     API_BASE_URL,
     LineApiError,
     LineClient,
+    ReplyResult,
     fit_text,
 )
 
@@ -28,7 +30,7 @@ def client_answering(status: int, body: dict[str, Any] | None = None) -> tuple[L
 
 async def test_reply_posts_one_text_message_with_the_token() -> None:
     line, seen = client_answering(200)
-    assert await line.reply("rt", "hello") is True
+    assert await line.reply("rt", "hello") is ReplyResult.SENT
     request = seen[0]
     assert request.url.path == "/v2/bot/message/reply"
     assert request.headers["authorization"] == f"Bearer {TOKEN}"
@@ -40,7 +42,7 @@ async def test_reply_posts_one_text_message_with_the_token() -> None:
 
 async def test_a_refused_reply_token_returns_false() -> None:
     line, _ = client_answering(400, {"message": "Invalid reply token"})
-    assert await line.reply("old", "hello") is False
+    assert await line.reply("old", "hello") is ReplyResult.TOKEN_REFUSED
 
 
 async def test_another_reply_failure_raises_with_the_status_only() -> None:
@@ -83,3 +85,80 @@ def test_text_is_cut_at_5000_utf16_units() -> None:
     emoji = "😀"  # two UTF-16 units
     cut = fit_text(emoji * 2501)
     assert cut == emoji * 2500
+
+
+CARDS = [
+    Card("Gion Inn", "Near the station", "https://example.com/1", image_url="https://e.com/1.jpg")
+]
+
+
+async def test_a_reply_with_cards_sends_the_text_first_and_one_flex_message_after() -> None:
+    line, seen = client_answering(200)
+    assert await line.reply("rt", "Here are two.", CARDS) is ReplyResult.SENT
+    messages = json.loads(seen[0].content)["messages"]
+    assert [m["type"] for m in messages] == ["text", "flex"]
+    assert messages[0]["text"] == "Here are two."
+    assert messages[1]["contents"]["type"] == "carousel"
+    assert messages[1]["contents"]["contents"][0].get("hero") is not None
+
+
+async def test_cards_alone_are_one_flex_message_and_text_alone_one_text_message() -> None:
+    line, seen = client_answering(200)
+    await line.reply("rt", None, CARDS)
+    await line.push("Cgroup", "only text")
+    assert [m["type"] for m in json.loads(seen[0].content)["messages"]] == ["flex"]
+    assert [m["type"] for m in json.loads(seen[1].content)["messages"]] == ["text"]
+
+
+async def test_without_images_the_cards_carry_no_picture() -> None:
+    line, seen = client_answering(200)
+    await line.reply("rt", "x", CARDS, with_images=False)
+    flex = json.loads(seen[0].content)["messages"][1]
+    assert "hero" not in flex["contents"]["contents"][0]
+
+
+async def test_a_push_with_cards_sends_both_messages() -> None:
+    line, seen = client_answering(200)
+    await line.push("Cgroup", "x", CARDS)
+    body = json.loads(seen[0].content)
+    assert body["to"] == "Cgroup"
+    assert [m["type"] for m in body["messages"]] == ["text", "flex"]
+
+
+async def test_a_400_about_the_reply_token_is_a_refused_token_even_with_cards() -> None:
+    line, _ = client_answering(400, {"message": "Invalid reply token"})
+    assert await line.reply("old", "x", CARDS) is ReplyResult.TOKEN_REFUSED
+
+
+async def test_a_400_about_the_message_shape_is_a_refused_message_when_cards_were_sent() -> None:
+    body = {
+        "message": "The request body has 1 error(s)",
+        "details": [{"message": "must be valid URL", "property": "messages[1].contents"}],
+    }
+    line, _ = client_answering(400, body)
+    assert await line.reply("rt", "x", CARDS) is ReplyResult.MESSAGE_REFUSED
+
+
+async def test_a_400_without_a_readable_body_counts_as_a_refused_message_with_cards() -> None:
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(400, content=b"not json")
+
+    http = httpx.AsyncClient(base_url=API_BASE_URL, transport=httpx.MockTransport(handle))
+    line = LineClient(TOKEN, http_client=http)
+    assert await line.reply("rt", "x", CARDS) is ReplyResult.MESSAGE_REFUSED
+
+
+async def test_a_400_on_a_text_only_reply_is_still_a_refused_token() -> None:
+    line, _ = client_answering(400, {"message": "The request body has 1 error(s)"})
+    assert await line.reply("rt", "x") is ReplyResult.TOKEN_REFUSED
+
+
+async def test_a_failed_push_with_cards_carries_the_status_and_no_body() -> None:
+    line, _ = client_answering(400, {"message": "The request body has 1 error(s)"})
+    with pytest.raises(LineApiError) as error:
+        await line.push("Cgroup", "secret words", CARDS)
+    assert error.value.status == 400
+    assert "secret words" not in str(error.value) and "example.com" not in str(error.value)

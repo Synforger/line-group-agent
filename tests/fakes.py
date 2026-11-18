@@ -6,6 +6,8 @@ No test calls a real API: these record what they were asked and answer from a sc
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,9 @@ import anthropic
 import httpx
 from anthropic.types import Message
 
+from line_group_agent.cards.card import Card
 from line_group_agent.config.agent_config import AgentConfig, parse_config
+from line_group_agent.line_api.line_client import LineApiError, ReplyResult
 
 PRICES_USD = {
     "input_per_mtok": 0.10,
@@ -119,22 +123,73 @@ class FakeAnthropic:
         self.messages = FakeMessages(answers)
 
 
-class FakeLine:
-    """Records replies and pushes; `reply_accepts` decides each reply's outcome."""
+@dataclass
+class SentCall:
+    """One reply or push that reached the fake."""
 
-    def __init__(self, *, reply_accepts: bool = True, names: dict[str, str] | None = None):
+    kind: str
+    target: str
+    text: str | None
+    cards: list[Card]
+    with_images: bool
+
+
+class FakeLine:
+    """Records replies and pushes.
+
+    `reply_accepts` decides each reply's outcome; `reply_results` scripts the
+    outcomes in order instead, and `push_statuses` scripts each push's failure status
+    (None lets the push through).
+    """
+
+    def __init__(
+        self,
+        *,
+        reply_accepts: bool = True,
+        names: dict[str, str] | None = None,
+        reply_results: list[ReplyResult] | None = None,
+        push_statuses: list[int | None] | None = None,
+    ) -> None:
         self.reply_accepts = reply_accepts
         self.names = names or {}
-        self.replies: list[tuple[str, str]] = []
-        self.pushes: list[tuple[str, str]] = []
+        self.reply_results = list(reply_results or [])
+        self.push_statuses = list(push_statuses or [])
+        self.calls: list[SentCall] = []
         self.name_lookups = 0
 
-    async def reply(self, reply_token: str, text: str) -> bool:
-        self.replies.append((reply_token, text))
-        return self.reply_accepts
+    @property
+    def replies(self) -> list[tuple[str, str | None]]:
+        return [(c.target, c.text) for c in self.calls if c.kind == "reply"]
 
-    async def push(self, to: str, text: str) -> None:
-        self.pushes.append((to, text))
+    @property
+    def pushes(self) -> list[tuple[str, str | None]]:
+        return [(c.target, c.text) for c in self.calls if c.kind == "push"]
+
+    async def reply(
+        self,
+        reply_token: str,
+        text: str | None,
+        cards: Sequence[Card] = (),
+        *,
+        with_images: bool = True,
+    ) -> ReplyResult:
+        self.calls.append(SentCall("reply", reply_token, text, list(cards), with_images))
+        if self.reply_results:
+            return self.reply_results.pop(0)
+        return ReplyResult.SENT if self.reply_accepts else ReplyResult.TOKEN_REFUSED
+
+    async def push(
+        self,
+        to: str,
+        text: str | None,
+        cards: Sequence[Card] = (),
+        *,
+        with_images: bool = True,
+    ) -> None:
+        self.calls.append(SentCall("push", to, text, list(cards), with_images))
+        status = self.push_statuses.pop(0) if self.push_statuses else None
+        if status is not None:
+            raise LineApiError("push", status)
 
     async def get_member_name(self, group_id: str, user_id: str) -> str | None:
         self.name_lookups += 1

@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from line_group_agent.agent.answerer import Answer
+from line_group_agent.cards.card import Card
 from line_group_agent.events.event_dispatcher import EventDispatcher
+from line_group_agent.line_api.line_client import ReplyResult
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 from line_group_agent.webhook.webhook_app import create_app
 from tests.fakes import FakeLine
@@ -21,13 +24,14 @@ PRIVATE_TEXT = "our secret plan for the trip"
 
 
 class ScriptedAnswerer:
-    def __init__(self, reply: str | None = "Sure.") -> None:
+    def __init__(self, reply: str | None = "Sure.", cards: list[Card] | None = None) -> None:
         self.reply = reply
+        self.cards = cards or []
         self.calls: list[tuple[str, GroupMessage]] = []
 
-    async def answer(self, group_id: str, mention: GroupMessage) -> str | None:
+    async def answer(self, group_id: str, mention: GroupMessage) -> Answer:
         self.calls.append((group_id, mention))
-        return self.reply
+        return Answer(self.reply, self.cards)
 
 
 def text_event(
@@ -224,7 +228,7 @@ async def test_the_worker_handles_queued_events_and_survives_a_failure(
 ) -> None:
     dispatcher, line, group_log, answerer = setup(tmp_path)
 
-    async def broken(group_id: str, mention: GroupMessage) -> str | None:
+    async def broken(group_id: str, mention: GroupMessage) -> Answer:
         raise RuntimeError(PRIVATE_TEXT)
 
     answerer.answer = broken  # type: ignore[method-assign]
@@ -244,9 +248,9 @@ def test_the_webhook_answers_200_before_the_answer_is_ready(tmp_path: Path) -> N
     release = asyncio.Event()
 
     class BlockedAnswerer:
-        async def answer(self, group_id: str, mention: GroupMessage) -> str | None:
+        async def answer(self, group_id: str, mention: GroupMessage) -> Answer:
             await release.wait()
-            return "late"
+            return Answer("late")
 
     dispatcher = EventDispatcher(frozenset({ALLOWED}), line, GroupLog(tmp_path), BlockedAnswerer())
     body = json.dumps({"events": [text_event(mentions_bot=True)]}).encode()
@@ -256,3 +260,51 @@ def test_the_webhook_answers_200_before_the_answer_is_ready(tmp_path: Path) -> N
         )
         assert response.status_code == 200
         assert line.replies == []
+
+
+CARDS = [
+    Card("Gion Inn", "x", "https://example.com/1", price="¥2,980〜"),
+    Card("River Hotel", "y", "https://example.com/2"),
+]
+
+
+async def test_sent_cards_are_added_to_the_bots_record_after_its_text(tmp_path: Path) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path)
+    answerer.cards = CARDS
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert line.calls[0].cards == CARDS
+    _, reply = group_log.list_recent(ALLOWED, 10)
+    assert reply.from_bot
+    assert reply.text == (
+        "Sure.\n[カード] 1. Gion Inn (¥2,980〜) https://example.com/1 / 2. River Hotel https://example.com/2"
+    )
+
+
+async def test_cards_with_no_text_are_sent_and_recorded(tmp_path: Path) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path)
+    answerer.reply, answerer.cards = None, CARDS
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert len(line.calls) == 1
+    _, reply = group_log.list_recent(ALLOWED, 10)
+    assert reply.text.startswith("[カード] 1. Gion Inn")
+
+
+async def test_cards_that_had_to_be_dropped_are_not_recorded_as_sent(tmp_path: Path) -> None:
+    dispatcher, _, group_log, answerer = setup(
+        tmp_path, reply_results=[ReplyResult.MESSAGE_REFUSED, ReplyResult.MESSAGE_REFUSED]
+    )
+    answerer.cards = CARDS
+    await dispatcher.handle(text_event(mentions_bot=True))
+    _, reply = group_log.list_recent(ALLOWED, 10)
+    assert reply.text == "Sure."
+
+
+async def test_nothing_is_recorded_when_a_cards_only_answer_cannot_be_sent(
+    tmp_path: Path,
+) -> None:
+    dispatcher, _, group_log, answerer = setup(
+        tmp_path, reply_results=[ReplyResult.MESSAGE_REFUSED, ReplyResult.MESSAGE_REFUSED]
+    )
+    answerer.reply, answerer.cards = None, CARDS
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]

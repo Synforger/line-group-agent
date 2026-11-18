@@ -1,20 +1,28 @@
 """The calls this agent makes to the LINE Messaging API: reply, push, member name.
 
-Called by the event dispatcher. Errors carry the HTTP status only, never a token or
-the text that was sent.
+A reply or push carries the answer's text and, after it, one Flex Message holding the
+cards (LINE takes up to 5 messages per call; this sends at most 2). Called by the
+answer sender. Errors carry the HTTP status only, never a token or what was sent.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
+from enum import StrEnum
+from typing import Any
 
 import httpx
+
+from line_group_agent.cards.card import Card
+from line_group_agent.line_api.flex_cards import build_flex_message
 
 API_BASE_URL = "https://api.line.me"
 REQUEST_TIMEOUT_SECONDS = 15.0
 TEXT_LIMIT_UTF16_UNITS = 5000
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
+TOKEN_REFUSED_MARKER = "reply token"
 
 
 class LineApiError(RuntimeError):
@@ -25,8 +33,16 @@ class LineApiError(RuntimeError):
         self.status = status
 
 
+class ReplyResult(StrEnum):
+    """How LINE answered a reply."""
+
+    SENT = "sent"
+    TOKEN_REFUSED = "token_refused"
+    MESSAGE_REFUSED = "message_refused"
+
+
 class LineClient:
-    """Sends text to a group and looks up a member's display name."""
+    """Sends text and cards to a group and looks up a member's display name."""
 
     def __init__(
         self,
@@ -40,24 +56,46 @@ class LineClient:
         )
         self._headers = {"Authorization": f"Bearer {channel_access_token}"}
 
-    async def reply(self, reply_token: str, text: str) -> bool:
-        """Answer an event with its reply token. Return False when LINE refuses the
-        token (used, or too old) so the caller can push instead."""
-        body = {"replyToken": reply_token, "messages": [_text_message(text)]}
-        status = await self._post("/v2/bot/message/reply", body, "reply")
-        if status == HTTP_OK:
-            return True
-        if status == HTTP_BAD_REQUEST:
-            return False
-        raise LineApiError("reply", status)
+    async def reply(
+        self,
+        reply_token: str,
+        text: str | None,
+        cards: Sequence[Card] = (),
+        *,
+        with_images: bool = True,
+    ) -> ReplyResult:
+        """Answer an event with its reply token: the text first, then the cards.
 
-    async def push(self, to: str, text: str) -> None:
-        """Send text to a group (counts against the account's monthly message quota)."""
-        body = {"to": to, "messages": [_text_message(text)]}
+        `TOKEN_REFUSED` means the token was used or too old, so the caller can push.
+        `MESSAGE_REFUSED` means LINE took the token but not the message, which only
+        happens when cards were sent: the caller may try the cards without images.
+        A 400 on a text-only reply is always reported as a refused token.
+        """
+        body = {"replyToken": reply_token, "messages": _messages(text, cards, with_images)}
+        response = await self._post("/v2/bot/message/reply", body, "reply")
+        if response.status_code == HTTP_OK:
+            return ReplyResult.SENT
+        if response.status_code == HTTP_BAD_REQUEST:
+            if cards and not _is_token_refusal(response):
+                return ReplyResult.MESSAGE_REFUSED
+            return ReplyResult.TOKEN_REFUSED
+        raise LineApiError("reply", response.status_code)
+
+    async def push(
+        self,
+        to: str,
+        text: str | None,
+        cards: Sequence[Card] = (),
+        *,
+        with_images: bool = True,
+    ) -> None:
+        """Send the text, then the cards, to a group (counts against the account's
+        monthly message quota)."""
+        body = {"to": to, "messages": _messages(text, cards, with_images)}
         headers = {"X-Line-Retry-Key": str(uuid.uuid4())}
-        status = await self._post("/v2/bot/message/push", body, "push", headers)
-        if status != HTTP_OK:
-            raise LineApiError("push", status)
+        response = await self._post("/v2/bot/message/push", body, "push", headers)
+        if response.status_code != HTTP_OK:
+            raise LineApiError("push", response.status_code)
 
     async def get_member_name(self, group_id: str, user_id: str) -> str | None:
         """Return a group member's display name, or None when LINE does not give it."""
@@ -82,17 +120,31 @@ class LineClient:
         body: dict[str, object],
         action: str,
         extra_headers: dict[str, str] | None = None,
-    ) -> int:
+    ) -> httpx.Response:
         headers = {**self._headers, **(extra_headers or {})}
         try:
-            response = await self._http.post(path, json=body, headers=headers)
+            return await self._http.post(path, json=body, headers=headers)
         except httpx.HTTPError as error:
             raise LineApiError(action, 0) from error
-        return response.status_code
 
 
-def _text_message(text: str) -> dict[str, str]:
-    return {"type": "text", "text": fit_text(text)}
+def _messages(text: str | None, cards: Sequence[Card], with_images: bool) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    if text:
+        messages.append({"type": "text", "text": fit_text(text)})
+    if cards:
+        messages.append(build_flex_message(list(cards), with_images=with_images))
+    return messages
+
+
+def _is_token_refusal(response: httpx.Response) -> bool:
+    """Tell a refused reply token from a refused message: both are a 400, and only
+    the error's `message` differs. The body is read here and never logged."""
+    try:
+        message = response.json().get("message")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(message, str) and TOKEN_REFUSED_MARKER in message.lower()
 
 
 def fit_text(text: str) -> str:

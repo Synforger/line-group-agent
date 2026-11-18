@@ -7,13 +7,14 @@
 - Receives LINE webhooks on loopback only: one endpoint, a body size cap, the signature checked on the raw body before anything is read, and an answer of 200 before any work
 - Keeps every text message of the allowed groups in a local, append-only record; events of other groups are dropped, and only their group id is logged
 - Answers only when the bot itself is mentioned, with Claude: recent messages, the web (search and page reading) and a search over the group's record
-- Sends only the text inside `<reply>…</reply>`, one message per mention, by reply token, falling back to a push when the token has expired
+- Sends only the text inside `<reply>…</reply>`, one answer per mention, by reply token, falling back to a push when the token has expired
+- Shows candidates as a carousel of cards (Flex Message): name, price, a short line, an optional picture and an "open" button each, up to 10 cards, sent after the reply text; the cards are written into the group's record so "the second one" can be followed up
 - Keeps a conversation record and a monthly spend file that a chat client can show read-only
 - Stops calling the API, with a fixed reply, when one more answer could pass the monthly limit
 
 ## May come next
 
-- Cards with buttons for votes and choices (Flex Message), and counting the votes
+- Vote and choice buttons on the cards, and counting the votes
 - A date picker button for finding a date that suits everyone
 - Reading photos and locations sent to the group
 - Deleting messages from the record on request, and a retention period for the record
