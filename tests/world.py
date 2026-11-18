@@ -17,6 +17,7 @@ from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.rollover import Rollover
 from line_group_agent.agent.summary_scrubber import SummaryScrubber
+from line_group_agent.cards.card_image_finder import CardImageFinder
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.group_watcher import GroupWatcher
@@ -83,6 +84,7 @@ def build_world(
     answers: list[dict[str, Any]],
     *,
     tools: Iterable[ClientTool] = (),
+    card_images: CardImageFinder | None = None,
     **overrides: Any,
 ) -> World:
     config = make_config(tmp_path, **overrides)
@@ -114,6 +116,7 @@ def build_world(
         deleter,
         client_tools=client_tools,
         photos=PhotoPicker(images, config.max_images_per_turn),
+        card_images=card_images,
     )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)

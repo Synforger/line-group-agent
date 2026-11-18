@@ -1,6 +1,7 @@
 """Check what the model passed to `show_cards` and turn it into cards.
 
-Pure judgement, no I/O; called by the answerer.
+Pure judgement, no I/O; called by the answerer and, for the shape of an address, by the card
+image finder.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ def parse_cards(raw_input: object) -> list[Card]:
 def _parse_card(item: object) -> Card | None:
     if not isinstance(item, dict):
         return None
-    url = _usable_url(item.get("url"))
+    url = usable_https_url(item.get("url"))
     title = one_line(item.get("title"), TITLE_MAX_CHARS)
     if url is None or not title:
         return None
@@ -53,13 +54,14 @@ def _parse_card(item: object) -> Card | None:
         title=title,
         text=one_line(item.get("text"), TEXT_MAX_CHARS),
         url=url,
-        image_url=_usable_url(item.get("image_url")),
+        image_url=usable_https_url(item.get("image_url")),
         price=one_line(item.get("price"), PRICE_MAX_CHARS) or None,
     )
 
 
-def _usable_url(value: object) -> str | None:
-    """Return the address as LINE wants it (non-ASCII percent-encoded), or None."""
+def usable_https_url(value: object) -> str | None:
+    """Return the address as LINE wants it (non-ASCII percent-encoded), or None unless it is
+    an `https://` address of at most `URL_MAX_CHARS` characters that names a host."""
     if not isinstance(value, str):
         return None
     url = value.strip()

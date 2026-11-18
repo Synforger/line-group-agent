@@ -1,8 +1,10 @@
 """Build the LINE Flex Message that shows a poll: the question and one button per option.
 
-A button sends a postback (not a chat message), so a vote is silent in the group; the data
-holds the poll id and the option's place. Pure shape-building, no I/O; called by the poll
-tools.
+A button sends a postback (not a chat message); the data holds the poll id and the option's
+place. In a one-pick poll the button also carries a display text, so LINE shows "<option> に投票"
+in the talk as a message of the member who pressed it. In a poll that allows several picks the
+agent answers each press with one line instead (see the postback handler). Pure
+shape-building, no I/O; called by the poll tools.
 """
 
 from __future__ import annotations
@@ -17,7 +19,10 @@ POSTBACK_SEPARATOR = ":"
 ALT_TEXT_MAX_CHARS = 400
 QUESTION_MAX_CHARS = 100
 OPTION_MAX_CHARS = 20
-CHOICE_HINT = "1人1票。もう一度押すと取り消し"
+# LINE's limit for a postback action's display text.
+DISPLAY_TEXT_MAX_CHARS = 300
+DISPLAY_TEXT_SUFFIX = " に投票"
+CHOICE_HINT = "1人1票。別の選択肢を押すと選び直せます"
 MULTIPLE_HINT = "複数選べます。もう一度押すと取り消し"
 DATE_HINT = "大丈夫な日を押してください(複数可)。もう一度押すと取り消し"
 SECONDARY_COLOR = "#666666"
@@ -62,16 +67,17 @@ def build_poll_message(poll: Poll) -> dict[str, Any]:
 
 
 def _button(poll: Poll, index: int) -> dict[str, Any]:
-    return {
-        "type": "button",
-        "style": "secondary",
-        "height": "sm",
-        "action": {
-            "type": "postback",
-            "label": cut_with_ellipsis(poll.options[index].label, OPTION_MAX_CHARS),
-            "data": postback_data_of(poll.id, index),
-        },
+    label = poll.options[index].label
+    action = {
+        "type": "postback",
+        "label": cut_with_ellipsis(label, OPTION_MAX_CHARS),
+        "data": postback_data_of(poll.id, index),
     }
+    if poll.kind != KIND_DATE and not poll.multiple:
+        action["displayText"] = cut_with_ellipsis(
+            f"{label}{DISPLAY_TEXT_SUFFIX}", DISPLAY_TEXT_MAX_CHARS
+        )
+    return {"type": "button", "style": "secondary", "height": "sm", "action": action}
 
 
 def _hint_of(poll: Poll) -> str:

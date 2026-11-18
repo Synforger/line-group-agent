@@ -1,5 +1,6 @@
-"""The words about a poll: the line that stands for it in the group's record, and the
-result the model is given when it asks for the count.
+"""The words about a poll: the line that stands for it in the group's record, the result the
+model is given when it asks for the count, and the line a member gets after pressing a button
+of a poll that allows several picks.
 
 Pure text building; called by the poll tools.
 """
@@ -12,6 +13,9 @@ POLL_RECORD_LABEL = "[投票]"
 DATE_POLL_RECORD_LABEL = "[日程]"
 ENTRY_SEPARATOR = " / "
 UNKNOWN_VOTER = "someone"
+UNNAMED_MEMBER = "あなた"
+PICK_SEPARATOR = "、"
+NO_PICKS = "なし"
 
 
 def poll_record_line(poll: Poll) -> str:
@@ -40,3 +44,14 @@ def format_poll_results(poll: Poll) -> str:
     people = {voter.user_id for option in poll.options for voter in option.voters}
     lines.append(f"{len(people)} member(s) have voted.")
     return "\n".join(lines)
+
+
+def format_picks_line(poll: Poll, user_id: str, name: str | None) -> str:
+    """Return `<name>: <the options the member has picked, in the poll's order>` (`なし` when
+    there is none), the line sent back after a press in a poll that allows several picks."""
+    picked = [
+        option.label
+        for option in poll.options
+        if any(voter.user_id == user_id for voter in option.voters)
+    ]
+    return f"{name or UNNAMED_MEMBER}: {PICK_SEPARATOR.join(picked) or NO_PICKS}"

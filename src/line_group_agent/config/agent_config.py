@@ -148,6 +148,7 @@ class AgentConfig:
     retention_days: int
     max_images_per_turn: int
     max_image_edge_pixels: int
+    card_image_lookup: bool
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -248,6 +249,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             DEFAULT_IMAGE_EDGE_PIXELS,
             minimum=MIN_IMAGE_EDGE_PIXELS,
         ),
+        card_image_lookup=_optional(raw, "card_image_lookup", bool, True),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),

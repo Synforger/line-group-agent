@@ -1,5 +1,5 @@
 """The tools the model uses to run polls: make a poll or a date poll, read the count, close
-one.
+one, and take back the vote of the member who asks.
 
 A poll goes out as a card after the reply text; votes are counted by the agent without the
 model (see the postback handler). A date poll is a poll whose options are candidate dates
@@ -16,7 +16,7 @@ from line_group_agent._common.one_line import one_line
 from line_group_agent.agent.client_tool import ClientTool, ToolOutcome, ToolTurn
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.polls.poll import KIND_CHOICE, KIND_DATE, Poll
-from line_group_agent.polls.poll_book import PollBook
+from line_group_agent.polls.poll_book import PollBook, VoteResult
 from line_group_agent.polls.poll_message import (
     OPTION_MAX_CHARS,
     QUESTION_MAX_CHARS,
@@ -28,10 +28,14 @@ CREATE_POLL_TOOL_NAME = "create_poll"
 CREATE_DATE_POLL_TOOL_NAME = "create_date_poll"
 POLL_RESULTS_TOOL_NAME = "poll_results"
 CLOSE_POLL_TOOL_NAME = "close_poll"
+WITHDRAW_VOTE_TOOL_NAME = "withdraw_vote"
 MIN_OPTION_COUNT = 2
 MAX_OPTION_COUNT = 10
 NO_ROOM_RESULT = "This reply already holds as many extra messages as LINE allows. Nothing was made."
 NO_POLL_RESULT = "There is no such poll in this group."
+CLOSED_POLL_RESULT = "That poll is closed, so votes can no longer change."
+UNKNOWN_MEMBER_RESULT = "The member who asked cannot be identified, so no vote was taken back."
+NO_VOTE_RESULT = "That member has no vote in the poll, so nothing was taken back."
 BAD_OPTIONS_RESULT = (
     f"Give a question and {MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different, non-empty options."
 )
@@ -89,11 +93,25 @@ def poll_tools(book: PollBook) -> list[ClientTool]:
             return ToolOutcome("There is no open poll to close.", is_error=True)
         return ToolOutcome(f"Poll {poll.id} is closed. Final count:\n{format_poll_results(poll)}")
 
+    def withdraw(tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        poll = book.get(turn.group_id, _poll_id_of(tool_input))
+        if poll is None:
+            return ToolOutcome(NO_POLL_RESULT, is_error=True)
+        if poll.is_closed:
+            return ToolOutcome(CLOSED_POLL_RESULT, is_error=True)
+        user_id = turn.mention.user_id
+        if user_id is None:
+            return ToolOutcome(UNKNOWN_MEMBER_RESULT, is_error=True)
+        if book.withdraw(turn.group_id, poll.id, user_id) is not VoteResult.WITHDRAWN:
+            return ToolOutcome(NO_VOTE_RESULT, is_error=True)
+        return ToolOutcome(f"The vote of the member who asked is taken back from poll {poll.id}.")
+
     return [
         ClientTool(CREATE_POLL_TOOL_NAME, _create_definition(), create),
         ClientTool(CREATE_DATE_POLL_TOOL_NAME, _create_date_definition(), create_date),
         ClientTool(POLL_RESULTS_TOOL_NAME, _results_definition(), results),
         ClientTool(CLOSE_POLL_TOOL_NAME, _close_definition(), close),
+        ClientTool(WITHDRAW_VOTE_TOOL_NAME, _withdraw_definition(), withdraw),
     ]
 
 
@@ -125,7 +143,9 @@ def _create_definition() -> dict[str, Any]:
         "description": (
             "Start a vote in the group. It is sent as a card with one button per option, "
             "after your reply; members vote by pressing a button, one vote each (or several "
-            "with multiple). Use it when a member asks for a vote. Write a short sentence "
+            "with multiple). Pressing the option already picked changes nothing in a "
+            "one-vote poll; a member takes a vote back by asking you (withdraw_vote). Use it "
+            "when a member asks for a vote. Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} options of at most "
             f"{OPTION_MAX_CHARS} characters each."
         ),
@@ -202,6 +222,24 @@ def _close_definition() -> dict[str, Any]:
         "description": (
             "Close a poll so it takes no more votes, and get its final count. Without poll_id "
             "it is the newest open poll. Use it when a member asks to close the vote."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "poll_id": {"type": "string", "description": "Optional, like p1."},
+            },
+        },
+    }
+
+
+def _withdraw_definition() -> dict[str, Any]:
+    return {
+        "name": WITHDRAW_VOTE_TOOL_NAME,
+        "description": (
+            "Take back the vote of the member whose message you are answering: every option "
+            "they picked in the poll. Use it when a member asks to cancel or remove their own "
+            "vote; it cannot touch anyone else's. Without poll_id it is the newest open poll. "
+            "A member who only wants another option presses that button instead."
         ),
         "input_schema": {
             "type": "object",

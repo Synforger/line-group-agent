@@ -49,7 +49,8 @@ cards: the last show_cards call you make.
 - create_poll starts a vote as a card after your reply. Members press its buttons and \
 the votes are counted without you; read them with poll_results and end the vote with \
 close_poll. create_date_poll does the same for finding a date: members press every date \
-that suits them. Start a poll only when a member asks for one.
+that suits them. withdraw_vote takes back the asking member's own vote when they ask \
+to cancel it. Start a poll only when a member asks for one.
 - get_itinerary and update_itinerary read and replace the group's trip itinerary, one \
 plain text with a heading line per day. update_itinerary replaces the whole text, so \
 read it first and write the full new one.

@@ -39,6 +39,7 @@
   "retention_days": 30,
   "max_images_per_turn": 3,
   "max_image_edge_pixels": 1568,
+  "card_image_lookup": true,
   "web_search": {"type": "web_search_20250305", "max_uses": 3},
   "web_fetch": {"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000},
   "prices_usd": {

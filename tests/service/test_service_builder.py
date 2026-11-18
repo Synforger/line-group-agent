@@ -68,3 +68,32 @@ def test_an_intro_file_that_cannot_be_read_stops_the_start(tmp_path: Path) -> No
 def test_an_intro_file_that_can_be_read_lets_the_service_start(tmp_path: Path) -> None:
     (tmp_path / "intro.txt").write_text("Hello.\n")
     build_with(tmp_path, intro_file="intro.txt")
+
+
+class SpyFinder:
+    """Counts how many card image finders the service builder made."""
+
+    made = 0
+
+    def __init__(self) -> None:
+        SpyFinder.made += 1
+
+    async def close(self) -> None:
+        return None
+
+
+@pytest.mark.parametrize(("lookup", "made"), [(True, 1), (False, 0)])
+def test_the_card_image_finder_is_made_only_when_the_lookup_is_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookup: bool, made: int
+) -> None:
+    SpyFinder.made = 0
+    monkeypatch.setattr("line_group_agent.service.service_builder.CardImageFinder", SpyFinder)
+    build_with(tmp_path, card_image_lookup=lookup)
+    assert SpyFinder.made == made
+
+
+def test_the_lookup_is_on_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    SpyFinder.made = 0
+    monkeypatch.setattr("line_group_agent.service.service_builder.CardImageFinder", SpyFinder)
+    build_with(tmp_path)
+    assert SpyFinder.made == 1

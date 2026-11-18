@@ -1,5 +1,9 @@
 from line_group_agent.polls.poll import KIND_DATE, Poll, PollOption, Voter
-from line_group_agent.polls.poll_text import format_poll_results, poll_record_line
+from line_group_agent.polls.poll_text import (
+    format_picks_line,
+    format_poll_results,
+    poll_record_line,
+)
 
 
 def poll(**changes: object) -> Poll:
@@ -46,3 +50,20 @@ def test_a_closed_multiple_poll_says_so_and_counts_each_member_once() -> None:
 
 def test_a_date_poll_is_described_as_marking_dates() -> None:
     assert "date poll" in format_poll_results(poll(kind=KIND_DATE)).splitlines()[0]
+
+
+def test_the_picks_line_names_the_member_and_lists_their_options_in_the_polls_order() -> None:
+    days = [
+        PollOption("11/23", [Voter("U1", "Aki")]),
+        PollOption("11/24", [Voter("U2", "Sora")]),
+        PollOption("11/25", [Voter("U1", "Aki"), Voter("U2", "Sora")]),
+    ]
+    assert format_picks_line(poll(options=days), "U1", "Aki") == "Aki: 11/23、11/25"
+
+
+def test_the_picks_line_says_none_when_nothing_is_picked() -> None:
+    assert format_picks_line(poll(), "U9", "Mio") == "Mio: なし"
+
+
+def test_the_picks_line_without_a_name_speaks_to_the_member() -> None:
+    assert format_picks_line(poll(), "U1", None) == "あなた: Kyoto"

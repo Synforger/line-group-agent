@@ -9,15 +9,29 @@ saving and sums are done by the agent in code, not by the model.
 
 A member can ask the bot to start a vote ("vote on where to go: Kyoto or Osaka"). The bot
 sends a card after its reply: the question and one button per option, up to 10 options of 20
-characters each. Pressing a button casts a vote and the bot says nothing back, so a vote costs
-no message and adds no noise to the group.
+characters each. Pressing a button casts a vote, and what the group sees depends on the kind
+of poll (below). The votes are counted by the agent, so a vote costs no model call and no
+message.
 
-- One vote each by default. Pressing another option moves the vote; pressing the same option
-  again takes it back. With "pick several" (`multiple`) each option is its own switch
+- **One vote each (the default).** Pressing a button makes LINE show `<option> に投票` in the
+  talk as a message of the member who pressed it (the button's display text, which LINE limits
+  to 300 characters; an option is at most 20), so everyone sees the press worked and who voted
+  for what. The bot adds nothing. Pressing another option moves the vote; pressing the option
+  already picked again changes nothing, so a member who presses twice does not lose the vote.
+  To take a vote back the member asks the bot ("cancel my vote"): the model calls
+  `withdraw_vote`, which removes only the votes of the member whose message it is answering,
+  from the newest open poll or the one named by id (`p1`)
+- **Several picks (`multiple`).** Each option is its own switch: a press picks it, a second
+  press takes it back. LINE shows nothing for such a press, so the bot answers it with one
+  line through the press's reply token: `<name>: <the options that member has picked now,
+  in the poll's order>`, or `<name>: なし` when none is left (`あなた` stands in for a name LINE
+  did not give). The model is not called, the line is not recorded in the group's record and
+  it is never pushed: when LINE refuses the reply token the line is dropped and the vote is
+  still counted. No display text is set on these buttons
 - A mention such as "how is the vote going?" makes the bot read the count (the model reports
   it, and may show it as cards). "Close the vote" ends the poll; a closed poll takes no more
-  votes. Without an id the newest open poll is meant; polls are numbered `p1`, `p2` … in the
-  group, and the newest 50 are kept
+  votes and no answer line. Without an id the newest open poll is meant; polls are numbered
+  `p1`, `p2` … in the group, and the newest 50 are kept
 - The poll is written into the group's record as one line (`[投票] p1 Where? 1. Kyoto / 2.
   Osaka`), so a later mention can refer to it
 
@@ -29,7 +43,8 @@ is not counted, and the agent logs one line saying so.
 
 When members need to agree on a date, the bot sends a date poll: a card with one button per
 candidate date (up to 10). A member presses every date that suits them, and presses again to
-take one back. Counting is the same as for polls: "which day works best?" makes the bot read
+take one back; each press is answered with the member's dates so far, like a poll with several
+picks (`Aki: 11/23(Sat)、11/25(Mon)`). Counting is the same as for polls: "which day works best?" makes the bot read
 each date's count and who marked it, and "close it" ends the poll. The record line starts
 with `[日程]`.
 
