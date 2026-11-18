@@ -52,7 +52,10 @@ async def test_the_request_carries_the_configured_model_tools_and_effort(tmp_pat
     request = client.messages.requests[0]
     assert request["model"] == "claude-haiku-5-5"
     assert request["max_tokens"] == 1024
-    assert request["system"] == "SYSTEM"
+    assert request["system"] == [
+        {"type": "text", "text": "SYSTEM", "cache_control": {"type": "ephemeral"}}
+    ]
+    assert request["cache_control"] == {"type": "ephemeral"}
     assert request["output_config"] == {"effort": "low"}
     tools = {tool["name"]: tool for tool in request["tools"]}
     assert tools["web_search"] == {
