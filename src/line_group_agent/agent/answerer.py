@@ -39,6 +39,11 @@ from line_group_agent.spend.spend_ledger import SpendLedger
 
 logger = logging.getLogger(__name__)
 
+# Prompt caching: a breakpoint after the fixed part (tools and system) is reused across
+# mentions; the top-level one moves to the end of each request, so the requests of one
+# mention's tool loop reread the whole earlier prefix from the cache.
+EPHEMERAL_CACHE = {"type": "ephemeral"}
+
 
 class MessagesClient(Protocol):
     """The part of the Anthropic client the answerer uses (`client.messages`)."""
@@ -132,10 +137,13 @@ class Answerer:
             response = await self.client.messages.create(
                 model=self.config.model,
                 max_tokens=self.config.max_tokens,
-                system=self.system_text,
+                system=[
+                    {"type": "text", "text": self.system_text, "cache_control": EPHEMERAL_CACHE}
+                ],
                 messages=messages,
                 tools=self._tools,
                 output_config={"effort": self.config.effort},
+                cache_control=EPHEMERAL_CACHE,
             )
         except anthropic.APIStatusError as error:
             logger.warning("answer: API refused the request (status %d)", error.status_code)
