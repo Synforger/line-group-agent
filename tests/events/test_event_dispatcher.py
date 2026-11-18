@@ -87,6 +87,28 @@ async def test_a_mention_of_the_bot_is_answered_by_reply(tmp_path: Path) -> None
     assert line.pushes == []
 
 
+async def test_the_sent_reply_is_recorded_as_the_bots_own_message(tmp_path: Path) -> None:
+    dispatcher, _, group_log, _ = setup(tmp_path)
+    await dispatcher.handle(text_event(mentions_bot=True))
+    mention, reply = group_log.list_recent(ALLOWED, 10)
+    assert not mention.from_bot
+    assert reply.from_bot and reply.text == "Sure."
+    assert reply.message_id.startswith("bot-")
+
+
+async def test_a_pushed_reply_is_recorded_too(tmp_path: Path) -> None:
+    dispatcher, _, group_log, _ = setup(tmp_path, reply_accepts=False)
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False, True]
+
+
+async def test_nothing_is_recorded_for_the_bot_when_nothing_is_sent(tmp_path: Path) -> None:
+    dispatcher, _, group_log, answerer = setup(tmp_path)
+    answerer.reply = None
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]
+
+
 async def test_the_bots_name_without_a_mention_is_not_answered(tmp_path: Path) -> None:
     dispatcher, line, _, answerer = setup(tmp_path)
     await dispatcher.handle(text_event(text="@bot are you there?"))
@@ -126,7 +148,7 @@ async def test_a_message_that_arrives_again_is_recorded_and_answered_once(
     event = text_event(mentions_bot=True)
     await dispatcher.handle(event)
     await dispatcher.handle(redelivered(event, age_seconds=5))
-    assert len(group_log.list_recent(ALLOWED, 10)) == 1
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False, True]
     assert len(answerer.calls) == 1
     assert len(line.replies) == 1 and line.pushes == []
 

@@ -1,4 +1,6 @@
-"""The record of a group: every text message of an allowed group, one JSON line each.
+"""The record of a group: every text message of an allowed group, one JSON line each,
+and every reply the bot sent there (marked `from_bot`), so a later mention sees the
+conversation the bot itself took part in.
 
 Written by the event dispatcher, read by the answerer (recent messages and history
 search). Lives at `<state_dir>/groups/<groupId>/messages.jsonl`. Append only.
@@ -17,13 +19,14 @@ GROUP_ID_PATTERN = re.compile(r"^[A-Za-z0-9]{1,64}$")
 
 @dataclass(frozen=True)
 class GroupMessage:
-    """One text message said in the group."""
+    """One text message said in the group (by a member, or by the bot when `from_bot`)."""
 
     time: str
     message_id: str
     user_id: str | None
     display_name: str | None
     text: str
+    from_bot: bool = False
 
 
 class GroupLog:
@@ -75,6 +78,7 @@ class GroupLog:
                     user_id=row.get("user_id"),
                     display_name=row.get("display_name"),
                     text=text,
+                    from_bot=row.get("from_bot") is True,
                 )
             )
         return messages
