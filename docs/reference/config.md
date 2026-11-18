@@ -52,6 +52,8 @@ folder that holds the file. Settings are not taken from environment variables.
 | `login_channel_id` | none | The channel ID of the LINE Login channel that LIFF app belongs to; its ID tokens are verified against it |
 | `liff_max_requests_per_user_per_minute` | `60` | Most requests one member may make to the voting page's API in a minute (1 or more) |
 | `liff_max_body_bytes` | `1024` | Largest request body the voting page's API accepts; larger ones get 413 (1 or more) |
+| `liff_max_failed_verifies_per_minute` | `30` | Most ID tokens LINE may refuse in a minute, over all requests; while the count is at the limit the voting page's API answers 429 without asking LINE (1 or more) |
+| `liff_max_failed_verifies_per_source_per_minute` | `10` | The same limit for each source address, the first address of `X-Forwarded-For`; without that header only the limit for all applies (1 or more) |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

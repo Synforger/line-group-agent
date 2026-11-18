@@ -2,7 +2,8 @@
 `POST /liff/api/poll` and `POST /liff/api/vote` (the poll's content, for a verified member).
 
 The ID token comes in the `Authorization: Bearer` header, the poll's link id and the option
-in a small JSON body. Every answer says `Cache-Control: no-store`; a refusal is a bare status
+in a small JSON body; the first address of `X-Forwarded-For` (set by the reverse proxy) names
+where a request came from. Every answer says `Cache-Control: no-store`; a refusal is a bare status
 with a one-word error and no detail. Built by the service builder and added to the web app.
 """
 
@@ -32,6 +33,7 @@ VOTE_PATH = "/liff/api/vote"
 HTTP_PAYLOAD_TOO_LARGE = 413
 BEARER_PREFIX = "bearer "
 MAX_TOKEN_CHARS = 4096
+MAX_SOURCE_CHARS = 64
 ERROR_WORDS = {
     HTTP_BAD_REQUEST: "bad_request",
     HTTP_UNAUTHORIZED: "unauthorized",
@@ -49,21 +51,21 @@ SAFE_HEADERS = {
 }
 
 
-Action = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+Action = Callable[[str, dict[str, Any], str | None], Awaitable[dict[str, Any]]]
 
 
 def build_liff_router(page: str, polls: LiffPolls, *, max_body_bytes: int) -> APIRouter:
     """Return the routes of the voting page, serving `page` and answering for `polls`."""
     router = APIRouter()
 
-    async def show_action(token: str, body: dict[str, Any]) -> dict[str, Any]:
-        return await polls.show(token, _link_id_of(body))
+    async def show_action(token: str, body: dict[str, Any], source: str | None) -> dict[str, Any]:
+        return await polls.show(token, _link_id_of(body), source)
 
-    async def vote_action(token: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def vote_action(token: str, body: dict[str, Any], source: str | None) -> dict[str, Any]:
         option = body.get("option")
         if isinstance(option, bool) or not isinstance(option, int):
             raise LiffRefusal(HTTP_BAD_REQUEST)
-        return await polls.vote(token, _link_id_of(body), option)
+        return await polls.vote(token, _link_id_of(body), option, source)
 
     @router.get(PAGE_PATH)
     async def show_page() -> Response:
@@ -86,7 +88,7 @@ async def _answer(request: Request, max_body_bytes: int, action: Action) -> Resp
         raw = await read_capped_body(request, max_body_bytes)
         if raw is None:
             raise LiffRefusal(HTTP_PAYLOAD_TOO_LARGE)
-        return _json(200, await action(token, _object_of(raw)))
+        return _json(200, await action(token, _object_of(raw), _source_of(request)))
     except LiffRefusal as refusal:
         return _json(refusal.status, {"error": ERROR_WORDS.get(refusal.status, "refused")})
 
@@ -97,6 +99,13 @@ def _token_of(request: Request) -> str:
     if not token or len(token) > MAX_TOKEN_CHARS:
         raise LiffRefusal(HTTP_UNAUTHORIZED)
     return token
+
+
+def _source_of(request: Request) -> str | None:
+    """Return the first address of `X-Forwarded-For`, or None when there is none (or it is
+    longer than any address)."""
+    first = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return first if 0 < len(first) <= MAX_SOURCE_CHARS else None
 
 
 def _object_of(raw: bytes) -> dict[str, Any]:

@@ -54,6 +54,8 @@ DEFAULT_IMAGE_EDGE_PIXELS = 1568
 MIN_IMAGE_EDGE_PIXELS = 64
 DEFAULT_LIFF_MAX_REQUESTS_PER_USER_PER_MINUTE = 60
 DEFAULT_LIFF_MAX_BODY_BYTES = 1024
+DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_MINUTE = 30
+DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_SOURCE_PER_MINUTE = 10
 LINE_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
@@ -158,6 +160,8 @@ class AgentConfig:
     login_channel_id: str | None
     liff_max_requests_per_user_per_minute: int
     liff_max_body_bytes: int
+    liff_max_failed_verifies_per_minute: int
+    liff_max_failed_verifies_per_source_per_minute: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -270,6 +274,16 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             DEFAULT_LIFF_MAX_REQUESTS_PER_USER_PER_MINUTE,
         ),
         liff_max_body_bytes=_at_least(raw, "liff_max_body_bytes", DEFAULT_LIFF_MAX_BODY_BYTES),
+        liff_max_failed_verifies_per_minute=_at_least(
+            raw,
+            "liff_max_failed_verifies_per_minute",
+            DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_MINUTE,
+        ),
+        liff_max_failed_verifies_per_source_per_minute=_at_least(
+            raw,
+            "liff_max_failed_verifies_per_source_per_minute",
+            DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_SOURCE_PER_MINUTE,
+        ),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),

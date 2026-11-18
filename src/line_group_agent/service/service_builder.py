@@ -38,6 +38,7 @@ from line_group_agent.liff.liff_page import load_liff_page
 from line_group_agent.liff.liff_polls import LiffPolls
 from line_group_agent.liff.liff_router import build_liff_router
 from line_group_agent.liff.request_limiter import RequestLimiter
+from line_group_agent.liff.verify_failure_limiter import VerifyFailureLimiter
 from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.line_api.login_client import LoginClient
 from line_group_agent.line_api.push_quota import PushQuota
@@ -194,6 +195,10 @@ def _liff_routers(
         login,
         LiffMembers(line),
         RequestLimiter(config.liff_max_requests_per_user_per_minute),
+        VerifyFailureLimiter(
+            config.liff_max_failed_verifies_per_minute,
+            config.liff_max_failed_verifies_per_source_per_minute,
+        ),
         login_channel_id=config.login_channel_id,
         is_group_allowed=lambda group_id: (
             group_id in config.allowed_group_ids or config.allow_groups_with_required_member
