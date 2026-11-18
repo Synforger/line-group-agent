@@ -164,7 +164,53 @@ async def test_the_model_can_make_a_poll_through_the_whole_answer(tmp_path: Path
     result = await world.answerer.answer(GROUP, MENTION)
     assert result.text == "Vote!" and len(result.extras) == 1
     names = [tool["name"] for tool in world.client.messages.requests[0]["tools"]]
-    assert {"create_poll", "poll_results", "close_poll"} <= set(names)
+    assert {"create_poll", "poll_results", "close_poll", "withdraw_vote"} <= set(names)
     [tool_result] = world.client.messages.requests[1]["messages"][-1]["content"]
     assert "p1" in tool_result["content"]
     assert json.loads((tmp_path / "state/groups" / GROUP / "polls.json").read_text())["polls"]
+
+
+def _withdraw(tmp_path: Path, tool_input: object, user_id: str | None = "U1"):
+    tools, book = tools_for(tmp_path)
+    run(tools["create_poll"], {"question": "Q", "options": ["A", "B"]})
+    book.vote(GROUP, "p1", 0, "U1", "Aki")
+    book.vote(GROUP, "p1", 1, "U2", "Sora")
+    mention = GroupMessage("t", "99", user_id, "x", "@bot cancel my vote")
+    outcome = tools["withdraw_vote"].run(tool_input, ToolTurn(GROUP, mention, TurnOutput()))
+    poll = book.get(GROUP, "p1")
+    assert poll is not None
+    return outcome, [[v.user_id for v in o.voters] for o in poll.options]
+
+
+def test_withdraw_vote_takes_back_only_the_vote_of_the_member_who_asked(tmp_path: Path) -> None:
+    outcome, voters = _withdraw(tmp_path, {})
+    assert not outcome.is_error and "p1" in outcome.content
+    assert voters == [[], ["U2"]]
+
+
+def test_withdraw_vote_can_name_the_poll(tmp_path: Path) -> None:
+    outcome, voters = _withdraw(tmp_path, {"poll_id": "p1"})
+    assert not outcome.is_error and voters == [[], ["U2"]]
+
+
+def test_withdraw_vote_for_a_member_without_a_vote_changes_nothing(tmp_path: Path) -> None:
+    outcome, voters = _withdraw(tmp_path, {}, user_id="U3")
+    assert outcome.is_error and voters == [["U1"], ["U2"]]
+
+
+def test_withdraw_vote_needs_to_know_who_asked(tmp_path: Path) -> None:
+    outcome, voters = _withdraw(tmp_path, {}, user_id=None)
+    assert outcome.is_error and voters == [["U1"], ["U2"]]
+
+
+def test_withdraw_vote_refuses_an_unknown_or_closed_poll(tmp_path: Path) -> None:
+    tools, book = tools_for(tmp_path)
+    assert run(tools["withdraw_vote"], {})[0].is_error
+    run(tools["create_poll"], {"question": "Q", "options": ["A", "B"]})
+    book.vote(GROUP, "p1", 0, "U1", "Aki")
+    assert run(tools["withdraw_vote"], {"poll_id": "p9"})[0].is_error
+    book.close(GROUP, "p1")
+    outcome, _ = run(tools["withdraw_vote"], {"poll_id": "p1"})
+    assert outcome.is_error and "closed" in outcome.content
+    poll = book.get(GROUP, "p1")
+    assert poll is not None and len(poll.options[0].voters) == 1

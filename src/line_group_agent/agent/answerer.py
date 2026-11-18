@@ -40,6 +40,7 @@ from line_group_agent.agent.thinking_blocks import without_thinking
 from line_group_agent.agent.tool_pairing import pair_tool_calls
 from line_group_agent.agent.turn_output import TurnOutput
 from line_group_agent.cards.card import Card
+from line_group_agent.cards.card_image_finder import CardImageFinder
 from line_group_agent.cards.card_input import parse_cards
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
@@ -90,6 +91,7 @@ class Answerer:
         *,
         client_tools: ClientTools | None = None,
         photos: PhotoPicker | None = None,
+        card_images: CardImageFinder | None = None,
     ) -> None:
         self.config = config
         self.caller = caller
@@ -99,6 +101,7 @@ class Answerer:
         self.deleter = deleter
         self.client_tools = client_tools or ClientTools()
         self.photos = photos
+        self.card_images = card_images
 
     async def answer(
         self,
@@ -109,7 +112,8 @@ class Answerer:
         is_name_only: bool = False,
     ) -> Answer:
         """Return what to send for this mention; an answer with no text and no cards
-        means send nothing. The cards are those of the last `show_cards` call.
+        means send nothing. The cards are those of the last `show_cards` call; a card without
+        a picture is given the one its page names, when the card image finder is set.
 
         With `is_name_only`, the message only holds the bot's name: the model is told it
         may not be addressed to it, and may end the turn with `stay_silent` (nothing is
@@ -194,6 +198,8 @@ class Answerer:
             return self._answer_without_reply(
                 is_api_down=is_api_down, is_over_budget=is_over_budget
             )
+        if cards and self.card_images is not None:
+            cards = await self.card_images.fill(cards)
         return Answer(reply, cards, extras=output.extras, quick_replies=output.quick_replies)
 
     def _answer_without_reply(self, *, is_api_down: bool, is_over_budget: bool) -> Answer:

@@ -20,8 +20,10 @@ not used, and a person over the hourly limit is skipped without being told.
 Other things a member does are recorded or counted without an answer: a photo is kept (made
 small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
 a message taken back (unsend) is deleted from the records, and a button press on a poll
-card (a postback) is counted as a vote. When the bot joins an allowed group it introduces
-itself with a fixed text, and when a member joins it may welcome them with another.
+card (a postback) is counted as a vote. A press in a poll that allows several picks is
+answered with one line through the event's reply token (never by push, never recorded).
+When the bot joins an allowed group it introduces itself with a fixed text, and when a
+member joins it may welcome them with another.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -80,7 +82,7 @@ from line_group_agent.events.mention_limiter import MentionLimiter, MentionVerdi
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
-from line_group_agent.line_api.line_client import LineApiError, LineClient
+from line_group_agent.line_api.line_client import LineApiError, LineClient, ReplyResult
 from line_group_agent.media.location_record import shared_location_line
 from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -399,13 +401,28 @@ class EventDispatcher:
     ) -> None:
         if self.postbacks is None:
             return
-        self.postbacks.handle(
+        line = self.postbacks.handle(
             group_id,
             data=data,
             user_id=user_id,
             display_name=await self._name_of(group_id, user_id),
             event_id=webhook_event_id_of(event),
         )
+        if line is not None:
+            await self._reply_once(event.get("replyToken"), line)
+
+    async def _reply_once(self, reply_token: Any, text: str) -> None:
+        """Answer an event with a line through its reply token only: when LINE refuses the
+        token or the call fails, nothing is sent instead (a push would cost a message)."""
+        if not isinstance(reply_token, str) or not reply_token:
+            return
+        try:
+            result = await self.line.reply(reply_token, text)
+        except LineApiError as error:
+            logger.warning("poll: the answer to a press failed (status %d)", error.status)
+            return
+        if result is not ReplyResult.SENT:
+            logger.info("poll: LINE refused the answer to a press; not sent")
 
     async def _forget(self, group_id: str, message_id: str) -> None:
         if self.deleter is None:

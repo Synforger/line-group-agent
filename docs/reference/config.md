@@ -46,6 +46,7 @@ folder that holds the file. Settings are not taken from environment variables.
 | `retention_days` | `30` | Group messages and conversation rows older than this are deleted once a day, except the running conversation's; the summaries are kept. See [Deleting messages](deleting.md) (1 or more) |
 | `max_images_per_turn` | `3` | Most photos given to the model at one mention (the newest ones the group sent since the bot's last turn). `0` turns photos off: they are neither kept nor recorded. See [Photos](group-tools.md#photos) |
 | `max_image_edge_pixels` | `1568` | A photo whose long side is longer is scaled down to this before it is kept (64 or more) |
+| `card_image_lookup` | `true` | A card the model sends without a picture is given the `og:image` (else `twitter:image`) of its own page, read with the limits in [Cards](cards.md#pictures): `https` and public addresses only, two seconds a page, the first 256 KB. `false`: no page is fetched for a card |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

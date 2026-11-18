@@ -29,6 +29,7 @@ def test_defaults_match_the_agreed_receiving_point(tmp_path: Path) -> None:
     assert config.help_keywords == ("help",)
     assert config.call_names == ()
     assert config.call_name_anywhere is False
+    assert config.card_image_lookup is True
     assert config.web_search is not None and config.web_search.max_uses == 3
     assert config.budget.currency == "JPY"
     assert config.budget.exhausted_text == "This month's budget is used up."
@@ -100,6 +101,13 @@ def test_names_are_read_anywhere_only_when_asked_for(tmp_path: Path) -> None:
     assert make_config(tmp_path, call_name_anywhere=True).call_name_anywhere is True
     with pytest.raises(ConfigError, match="call_name_anywhere"):
         make_config(tmp_path, call_name_anywhere="yes")
+
+
+def test_the_card_picture_lookup_is_on_unless_turned_off(tmp_path: Path) -> None:
+    assert make_config(tmp_path, card_image_lookup=False).card_image_lookup is False
+    assert make_config(tmp_path, card_image_lookup=True).card_image_lookup is True
+    with pytest.raises(ConfigError, match="card_image_lookup"):
+        make_config(tmp_path, card_image_lookup="yes")
 
 
 def test_a_wrong_kind_is_refused(tmp_path: Path) -> None:

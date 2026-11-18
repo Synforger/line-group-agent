@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ import pytest
 
 from line_group_agent.agent.answerer import Answer
 from line_group_agent.agent.prompt import NOTHING_DELETED_RESULT
+from line_group_agent.cards.card import Card
 from line_group_agent.config.agent_config import DEFAULT_ERROR_TEXT
 from line_group_agent.records.conversation_log import ConversationLog
 from line_group_agent.records.group_log import GroupMessage
@@ -519,3 +521,58 @@ async def test_a_reply_with_cards_but_no_text_is_not_an_error(tmp_path: Path) ->
     )
     result = await answerer.answer(GROUP, mention())
     assert result.text is None and len(result.cards) == 1
+
+
+class FakeCardImages:
+    """Stands in for the card image finder: gives each card without a picture one named after
+    its title, and keeps what it was asked."""
+
+    def __init__(self) -> None:
+        self.asked: list[list[str]] = []
+
+    async def fill(self, cards: list[Card]) -> list[Card]:
+        self.asked.append([card.title for card in cards])
+        return [
+            card
+            if card.image_url is not None
+            else replace(card, image_url=f"https://img.example.com/{card.title}.jpg")
+            for card in cards
+        ]
+
+
+async def test_cards_without_a_picture_are_given_the_one_their_page_names(
+    tmp_path: Path,
+) -> None:
+    finder = FakeCardImages()
+    world = build_world(
+        tmp_path,
+        [
+            cards_call([hotel("a"), hotel("b", image_url="https://example.com/own.jpg")]),
+            text_answer("<reply>x</reply>", message_id="m2"),
+        ],
+        card_images=finder,  # type: ignore[arg-type]
+    )
+    result = await world.answerer.answer(GROUP, mention())
+    assert finder.asked == [["a", "b"]]
+    assert [card.image_url for card in result.cards] == [
+        "https://img.example.com/a.jpg",
+        "https://example.com/own.jpg",
+    ]
+
+
+async def test_without_a_finder_the_cards_are_sent_as_the_model_made_them(tmp_path: Path) -> None:
+    answerer, *_ = build(
+        tmp_path, [cards_call([hotel("a")]), text_answer("<reply>x</reply>", message_id="m2")]
+    )
+    assert (await answerer.answer(GROUP, mention())).cards[0].image_url is None
+
+
+async def test_the_finder_is_not_asked_when_no_cards_were_shown(tmp_path: Path) -> None:
+    finder = FakeCardImages()
+    world = build_world(
+        tmp_path,
+        [text_answer("<reply>x</reply>")],
+        card_images=finder,  # type: ignore[arg-type]
+    )
+    await world.answerer.answer(GROUP, mention())
+    assert finder.asked == []

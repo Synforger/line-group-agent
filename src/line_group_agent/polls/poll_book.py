@@ -23,11 +23,13 @@ MAX_POLLS_KEPT = 50
 
 
 class VoteResult(StrEnum):
-    """What a vote did: it was counted, it took the member's earlier vote back, or it was
-    ignored (an unknown or closed poll, or an option that does not exist)."""
+    """What a vote did: it was counted, it took the member's earlier vote back, it changed
+    nothing (a one-pick poll pressed again on the option already picked), or it was ignored
+    (an unknown or closed poll, or an option that does not exist)."""
 
     COUNTED = "counted"
     WITHDRAWN = "withdrawn"
+    UNCHANGED = "unchanged"
     IGNORED = "ignored"
 
 
@@ -76,9 +78,10 @@ class PollBook:
     def vote(
         self, group_id: str, poll_id: str, option_index: int, user_id: str, name: str | None
     ) -> VoteResult:
-        """Count a member's vote: a first press picks the option, a second press on the same
-        option takes it back. In a poll that allows one pick, picking another option moves
-        the vote."""
+        """Count a member's vote. In a poll that allows several picks each option is a switch:
+        a press picks it, a second press takes it back. In a poll that allows one pick, a press
+        on another option moves the vote and a second press on the option already picked
+        changes nothing (taking the vote back is `withdraw`)."""
         document = self._read(group_id)
         polls = _polls_of(document)
         poll = _find(polls, poll_id)
@@ -86,6 +89,8 @@ class PollBook:
             return VoteResult.IGNORED
         option = poll.options[option_index]
         if any(voter.user_id == user_id for voter in option.voters):
+            if not poll.multiple:
+                return VoteResult.UNCHANGED
             option.voters = [voter for voter in option.voters if voter.user_id != user_id]
             result = VoteResult.WITHDRAWN
         else:
@@ -96,6 +101,21 @@ class PollBook:
             result = VoteResult.COUNTED
         self._write(group_id, int(document.get("last_number", 0)), polls)
         return result
+
+    def withdraw(self, group_id: str, poll_id: str, user_id: str) -> VoteResult:
+        """Take back every vote this member has in the poll: WITHDRAWN when there was one,
+        else IGNORED (an unknown or closed poll, or no vote of the member's)."""
+        document = self._read(group_id)
+        polls = _polls_of(document)
+        poll = _find(polls, poll_id)
+        if poll is None or poll.is_closed:
+            return VoteResult.IGNORED
+        if not any(voter.user_id == user_id for option in poll.options for voter in option.voters):
+            return VoteResult.IGNORED
+        for option in poll.options:
+            option.voters = [voter for voter in option.voters if voter.user_id != user_id]
+        self._write(group_id, int(document.get("last_number", 0)), polls)
+        return VoteResult.WITHDRAWN
 
     def close(self, group_id: str, poll_id: str | None = None) -> Poll | None:
         """Close the poll (the newest open one without an id) and return it, or None when

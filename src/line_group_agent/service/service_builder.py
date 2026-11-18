@@ -22,6 +22,7 @@ from line_group_agent.agent.rollover import Rollover
 from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.alerts.alert_notifier import AlertNotifier
 from line_group_agent.bills.bill_tools import bill_tools
+from line_group_agent.cards.card_image_finder import CardImageFinder
 from line_group_agent.config.agent_config import AgentConfig, ConfigError, load_secrets
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.event_dispatcher import EventDispatcher, NoticeTexts
@@ -93,6 +94,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         group_log, conversations, search_limit=config.history_search_limit, scrubber=scrubber
     )
     images = ImageStore(config.state_dir)
+    card_images = CardImageFinder() if config.card_image_lookup else None
     answerer = Answerer(
         config,
         caller,
@@ -102,6 +104,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         deleter,
         client_tools=client_tools,
         photos=PhotoPicker(images, config.max_images_per_turn),
+        card_images=card_images,
     )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
@@ -149,11 +152,14 @@ def build_app(config: AgentConfig) -> FastAPI:
         media=_media_recorder(config, line, images),
         notifier=notifier,
     )
+    closers = [line.close, client.close]
+    if card_images is not None:
+        closers.append(card_images.close)
     return create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
         dispatcher,
-        on_close=[line.close, client.close],
+        on_close=closers,
         background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
     )
 

@@ -49,13 +49,16 @@ def test_an_id_may_be_written_as_a_bare_number_or_in_capitals(tmp_path: Path) ->
     assert polls.get(GROUP, "p9") is None
 
 
-def test_one_vote_each_and_a_second_press_takes_it_back(tmp_path: Path) -> None:
+def test_one_vote_each_and_a_second_press_on_the_same_option_changes_nothing(
+    tmp_path: Path,
+) -> None:
     polls = book(tmp_path)
     polls.create(GROUP, "Where?", ["Kyoto", "Osaka"])
     assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.COUNTED
-    assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.WITHDRAWN
+    assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.UNCHANGED
+    assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.UNCHANGED
     poll = polls.get(GROUP, "p1")
-    assert poll is not None and [len(o.voters) for o in poll.options] == [0, 0]
+    assert poll is not None and [len(o.voters) for o in poll.options] == [1, 0]
 
 
 def test_in_a_single_pick_poll_another_option_moves_the_vote(tmp_path: Path) -> None:
@@ -78,6 +81,41 @@ def test_in_a_multiple_poll_each_option_is_its_own_switch(tmp_path: Path) -> Non
     poll = polls.get(GROUP, "p1")
     assert poll is not None
     assert [[v.user_id for v in o.voters] for o in poll.options] == [[], [], ["U1"]]
+
+
+def test_in_a_multiple_poll_a_second_press_takes_the_pick_back(tmp_path: Path) -> None:
+    polls = book(tmp_path)
+    polls.create(GROUP, "Which days?", ["Sat", "Sun"], multiple=True)
+    assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.COUNTED
+    assert polls.vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.WITHDRAWN
+    poll = polls.get(GROUP, "p1")
+    assert poll is not None and [len(o.voters) for o in poll.options] == [0, 0]
+
+
+def test_withdrawing_takes_back_every_vote_of_that_member_only(tmp_path: Path) -> None:
+    polls = book(tmp_path)
+    polls.create(GROUP, "Which days?", ["Sat", "Sun"], multiple=True)
+    for option_index in (0, 1):
+        polls.vote(GROUP, "p1", option_index, "U1", "Aki")
+    polls.vote(GROUP, "p1", 0, "U2", "Sora")
+    assert polls.withdraw(GROUP, "p1", "U1") is VoteResult.WITHDRAWN
+    poll = polls.get(GROUP, "p1")
+    assert poll is not None
+    assert [[v.user_id for v in o.voters] for o in poll.options] == [["U2"], []]
+
+
+def test_withdrawing_without_a_vote_or_from_a_closed_or_unknown_poll_is_ignored(
+    tmp_path: Path,
+) -> None:
+    polls = book(tmp_path)
+    polls.create(GROUP, "Where?", ["Kyoto", "Osaka"])
+    assert polls.withdraw(GROUP, "p1", "U1") is VoteResult.IGNORED
+    assert polls.withdraw(GROUP, "p9", "U1") is VoteResult.IGNORED
+    polls.vote(GROUP, "p1", 0, "U1", "Aki")
+    polls.close(GROUP, "p1")
+    assert polls.withdraw(GROUP, "p1", "U1") is VoteResult.IGNORED
+    poll = polls.get(GROUP, "p1")
+    assert poll is not None and len(poll.options[0].voters) == 1
 
 
 def test_a_vote_that_cannot_count_is_ignored(tmp_path: Path) -> None:
