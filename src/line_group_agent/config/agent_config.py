@@ -106,6 +106,7 @@ class AgentConfig:
     history_search_limit: int
     redelivered_answer_window_seconds: int
     required_member_user_id: str | None
+    allow_groups_with_required_member: bool
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -164,6 +165,9 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         ),
         required_member_user_id=_optional(raw, "required_member_user_id", str, None),
+        allow_groups_with_required_member=_optional(
+            raw, "allow_groups_with_required_member", bool, False
+        ),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),

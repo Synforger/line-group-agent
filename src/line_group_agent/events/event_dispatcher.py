@@ -9,7 +9,9 @@ group's id (and nothing else) so the operator can add it.
 
 When a required member is configured, the bot leaves a group that is not on the list
 as soon as it hears from it, unless that member is in the group (LINE is asked; a
-group whose membership cannot be confirmed is left too).
+group whose membership cannot be confirmed is left too). With
+`allow_groups_with_required_member`, a group that member is in counts as allowed; the
+membership is asked again after an hour, and the bot leaves once the member is gone.
 
 LINE may send an event again after a failed delivery (webhook redelivery). A message
 whose id is already in the group's record is skipped, so it is recorded and answered
@@ -21,7 +23,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -43,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_CAPACITY = 1000
 DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
+MEMBERSHIP_RECHECK_SECONDS = 3600
 
 
 class MentionAnswerer(Protocol):
@@ -63,6 +68,8 @@ class EventDispatcher:
         *,
         redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         required_member_user_id: str | None = None,
+        allow_groups_with_required_member: bool = False,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.allowed_group_ids = allowed_group_ids
         self.line = line
@@ -71,6 +78,10 @@ class EventDispatcher:
         self._sender = AnswerSender(line)
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
+        self.allow_groups_with_required_member = allow_groups_with_required_member
+        self._clock = clock
+        self._membership: dict[str, tuple[bool | None, float]] = {}
+        self._left_groups: set[str] = set()
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(QUEUE_CAPACITY)
         self._worker: asyncio.Task[None] | None = None
         self._names: dict[tuple[str, str], str | None] = {}
@@ -108,8 +119,7 @@ class EventDispatcher:
         group_id = group_id_of(event)
         if group_id is None:
             return
-        if group_id not in self.allowed_group_ids:
-            await self._handle_unknown_group(event, group_id)
+        if group_id not in self.allowed_group_ids and not await self._admit(event, group_id):
             return
         if not is_text_message(event):
             return
@@ -157,19 +167,46 @@ class EventDispatcher:
             finally:
                 self._queue.task_done()
 
-    async def _handle_unknown_group(self, event: dict[str, Any], group_id: str) -> None:
-        if group_id in self._reported_groups:
-            return
-        self._reported_groups.add(group_id)
+    async def _admit(self, event: dict[str, Any], group_id: str) -> bool:
+        """Decide an event from a group not on the configured list: True to handle it
+        as an allowed group's event, False to drop it (leaving the group if needed)."""
+        if group_id in self._left_groups:
+            return False
         if self.required_member_user_id is not None:
-            present = await self.line.is_member(group_id, self.required_member_user_id)
-            if present is not True:
+            if await self._member_present(group_id) is not True:
+                self._left_groups.add(group_id)
                 await self._leave(group_id)
-                return
-        if event.get("type") == "join":
-            logger.warning("join: joined a group that is not allowed: group_id=%s", group_id)
-        else:
-            logger.warning("events: dropped events of a group not allowed: group_id=%s", group_id)
+                return False
+            if self.allow_groups_with_required_member:
+                if group_id not in self._reported_groups:
+                    logger.warning(
+                        "events: allowed a group the member is in: group_id=%s", group_id
+                    )
+                    self._reported_groups.add(group_id)
+                return True
+        if group_id not in self._reported_groups:
+            self._reported_groups.add(group_id)
+            if event.get("type") == "join":
+                logger.warning("join: joined a group that is not allowed: group_id=%s", group_id)
+            else:
+                logger.warning(
+                    "events: dropped events of a group not allowed: group_id=%s", group_id
+                )
+        return False
+
+    async def _member_present(self, group_id: str) -> bool | None:
+        assert self.required_member_user_id is not None
+        now = self._clock()
+        cached = self._membership.get(group_id)
+        if (
+            cached is not None
+            and cached[0] is True
+            and now - cached[1] < MEMBERSHIP_RECHECK_SECONDS
+        ):
+            return True
+        present = await self.line.is_member(group_id, self.required_member_user_id)
+        self._membership[group_id] = (present, now)
+        return present
 
     async def _leave(self, group_id: str) -> None:
         try:
