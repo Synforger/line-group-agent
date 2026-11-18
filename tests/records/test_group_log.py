@@ -28,6 +28,7 @@ def test_each_message_is_one_line_with_the_agreed_fields(tmp_path: Path) -> None
             "user_id": "U1",
             "display_name": "Aki",
             "text": "hello",
+            "from_bot": False,
         }
     ]
 
@@ -94,3 +95,21 @@ def test_has_message_finds_a_recorded_message_id(tmp_path: Path) -> None:
     log.add("Cgroup", message(1, "hello"))
     assert log.has_message("Cgroup", "1")
     assert not log.has_message("Cgroup", "2")
+
+
+def test_a_bot_reply_reads_back_marked(tmp_path: Path) -> None:
+    log = GroupLog(tmp_path)
+    log.add("Cgroup", message(1, "hello"))
+    log.add(
+        "Cgroup",
+        GroupMessage(
+            time="2026-11-18T12:00:02+09:00",
+            message_id="bot-1",
+            user_id=None,
+            display_name=None,
+            text="hi there",
+            from_bot=True,
+        ),
+    )
+    first, second = log.list_recent("Cgroup", 10)
+    assert not first.from_bot and second.from_bot

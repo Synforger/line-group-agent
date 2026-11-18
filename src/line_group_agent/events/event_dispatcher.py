@@ -1,7 +1,8 @@
 """Handle webhook events one at a time, after the webhook has already answered 200.
 
 The webhook endpoint queues events here. For an allowed group, each text message is
-recorded, and a message that mentions the bot is answered through the answerer.
+recorded, and a message that mentions the bot is answered through the answerer. The
+reply, once sent, is recorded too, so the next mention sees what the bot said.
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -126,7 +128,8 @@ class EventDispatcher:
         if text is None:
             logger.info("answer: no reply to send")
             return
-        await self._send(group_id, event.get("replyToken"), text)
+        if await self._send(group_id, event.get("replyToken"), text):
+            self.group_log.add(group_id, _bot_reply(text))
 
     def _is_too_old(self, event: dict[str, Any]) -> bool:
         age = age_seconds_of(event, datetime.now().astimezone())
@@ -157,15 +160,28 @@ class EventDispatcher:
             self._names[key] = await self.line.get_member_name(group_id, user_id)
         return self._names[key]
 
-    async def _send(self, group_id: str, reply_token: Any, text: str) -> None:
+    async def _send(self, group_id: str, reply_token: Any, text: str) -> bool:
+        """Send the answer; return whether LINE accepted it."""
         # Push only when LINE refused the reply token; on any other failure the reply
         # may have been delivered, and a push would send the answer twice.
         if isinstance(reply_token, str) and reply_token:
             try:
                 if await self.line.reply(reply_token, text):
-                    return
+                    return True
             except LineApiError as error:
                 logger.warning("reply: failed (status %d); not retrying", error.status)
-                return
+                return False
             logger.info("reply: the reply token was refused; sending by push instead")
         await self.line.push(group_id, text)
+        return True
+
+
+def _bot_reply(text: str) -> GroupMessage:
+    return GroupMessage(
+        time=datetime.now().astimezone().isoformat(timespec="seconds"),
+        message_id=f"bot-{uuid.uuid4()}",
+        user_id=None,
+        display_name=None,
+        text=text,
+        from_bot=True,
+    )
