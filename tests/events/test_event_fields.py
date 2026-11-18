@@ -229,3 +229,21 @@ def test_a_latin_name_inside_a_longer_word_is_not_found(text: str) -> None:
 def test_no_names_or_no_text_finds_nothing() -> None:
     assert not is_name_in_text(said("ソラ"), ())
     assert not is_name_in_text({"type": "message", "message": {"type": "image"}}, NAMES)
+
+
+@pytest.mark.parametrize(
+    "text", ["ソラ候補出して", "そら投票作って", "ソラliff使って", "Sora、ねえ", "SORA what's good"]
+)
+def test_with_start_runs_on_a_name_glued_to_the_text_at_the_start_calls(text: str) -> None:
+    assert is_called_by_name(said(text), NAMES, start_runs_on=True)
+
+
+@pytest.mark.parametrize("text", ["Soraya Live", "昨日ソラに聞いた"])
+def test_with_start_runs_on_a_latin_word_or_a_name_in_the_middle_still_does_not(
+    text: str,
+) -> None:
+    assert not is_called_by_name(said(text), NAMES, start_runs_on=True)
+
+
+def test_without_start_runs_on_a_glued_name_at_the_start_does_not_call() -> None:
+    assert not is_called_by_name(said("ソラ候補出して"), NAMES)

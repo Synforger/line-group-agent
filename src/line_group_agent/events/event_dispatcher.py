@@ -144,6 +144,7 @@ class EventDispatcher:
         required_member_user_id: str | None = None,
         call_names: tuple[str, ...] = (),
         call_name_anywhere: bool = False,
+        call_name_start_runs_on: bool = False,
         allow_groups_with_required_member: bool = False,
         observer: GroupObserver | None = None,
         texts: NoticeTexts | None = None,
@@ -172,6 +173,7 @@ class EventDispatcher:
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
         self.call_name_anywhere = call_name_anywhere
+        self.call_name_start_runs_on = call_name_start_runs_on
         self.allow_groups_with_required_member = allow_groups_with_required_member
         self.observer = observer
         self._clock = clock
@@ -256,7 +258,9 @@ class EventDispatcher:
 
         if kind != TEXT_KIND:
             return
-        is_called = is_self_mentioned(event) or is_called_by_name(event, self.call_names)
+        is_called = is_self_mentioned(event) or is_called_by_name(
+            event, self.call_names, start_runs_on=self.call_name_start_runs_on
+        )
         is_name_only = (
             not is_called and self.call_name_anywhere and is_name_in_text(event, self.call_names)
         )
