@@ -25,6 +25,7 @@ DEFAULT_RECENT_MESSAGE_COUNT = 30
 DEFAULT_MAX_TOOL_ROUNDS = 4
 DEFAULT_HISTORY_SEARCH_LIMIT = 20
 DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
+DEFAULT_HELP_KEYWORDS = ("help",)
 DEFAULT_WEB_SEARCH_TYPE = "web_search_20250305"
 DEFAULT_WEB_SEARCH_MAX_USES = 3
 DEFAULT_WEB_FETCH_TYPE = "web_fetch_20250910"
@@ -129,6 +130,8 @@ class AgentConfig:
     allow_groups_with_required_member: bool
     alert_user_id: str | None
     intro_file: Path | None
+    help_file: Path | None
+    help_keywords: tuple[str, ...]
     error_text: str
     wait_text: str
     wait_min_push_left: int
@@ -210,6 +213,8 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         ),
         alert_user_id=_optional(raw, "alert_user_id", str, None),
         intro_file=_optional_path(raw, "intro_file", base_dir, None),
+        help_file=_optional_path(raw, "help_file", base_dir, None),
+        help_keywords=_string_tuple(raw, "help_keywords", DEFAULT_HELP_KEYWORDS),
         error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
         wait_min_push_left=_at_least(
@@ -307,6 +312,15 @@ def _budget(section: dict[str, Any]) -> BudgetConfig:
         ),
         exhausted_text=_optional(section, "exhausted_text", str, DEFAULT_EXHAUSTED_TEXT),
     )
+
+
+def _string_tuple(raw: dict[str, Any], key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    values = _optional(raw, key, list, None)
+    if values is None:
+        return default
+    if not all(isinstance(value, str) and value.strip() for value in values):
+        raise ConfigError(f"{key} must be a list of non-empty strings")
+    return tuple(value.strip() for value in values)
 
 
 def _optional_path[T: Path | None](

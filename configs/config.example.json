@@ -25,6 +25,8 @@
   "allow_groups_with_required_member": false,
   "alert_user_id": "U0123456789abcdef0123456789abcdef",
   "intro_file": "intro.md",
+  "help_file": "help.md",
+  "help_keywords": ["help", "what can you do"],
   "error_text": "Something went wrong, so I could not answer. Please try again in a bit.",
   "wait_text": "Looking that up, one moment.",
   "wait_min_push_left": 20,
