@@ -257,6 +257,8 @@ def test_the_voting_page_is_off_unless_both_ids_are_given(tmp_path: Path) -> Non
     assert config.liff_id is None and config.login_channel_id is None
     assert config.liff_max_requests_per_user_per_minute == 60
     assert config.liff_max_body_bytes == 1024
+    assert config.liff_max_failed_verifies_per_minute == 30
+    assert config.liff_max_failed_verifies_per_source_per_minute == 10
 
 
 def test_the_voting_page_settings_can_be_set(tmp_path: Path) -> None:
@@ -266,11 +268,15 @@ def test_the_voting_page_settings_can_be_set(tmp_path: Path) -> None:
         login_channel_id="1234567890",
         liff_max_requests_per_user_per_minute=10,
         liff_max_body_bytes=512,
+        liff_max_failed_verifies_per_minute=5,
+        liff_max_failed_verifies_per_source_per_minute=2,
     )
     assert config.liff_id == "1234567890-AbCdEfGh"
     assert config.login_channel_id == "1234567890"
     assert config.liff_max_requests_per_user_per_minute == 10
     assert config.liff_max_body_bytes == 512
+    assert config.liff_max_failed_verifies_per_minute == 5
+    assert config.liff_max_failed_verifies_per_source_per_minute == 2
 
 
 @pytest.mark.parametrize(
@@ -288,7 +294,15 @@ def test_an_id_that_does_not_fit_in_an_address_is_refused(tmp_path: Path, bad: s
         make_config(tmp_path, liff_id=bad, login_channel_id="1234567890")
 
 
-@pytest.mark.parametrize("key", ["liff_max_requests_per_user_per_minute", "liff_max_body_bytes"])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "liff_max_requests_per_user_per_minute",
+        "liff_max_body_bytes",
+        "liff_max_failed_verifies_per_minute",
+        "liff_max_failed_verifies_per_source_per_minute",
+    ],
+)
 def test_the_limits_must_be_positive(tmp_path: Path, key: str) -> None:
     with pytest.raises(ConfigError, match=key):
         make_config(tmp_path, **{key: 0})

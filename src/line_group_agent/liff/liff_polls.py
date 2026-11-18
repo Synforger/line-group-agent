@@ -2,7 +2,8 @@
 are.
 
 Every call carries the member's LINE ID token. The token is verified with LINE Login (and its
-audience and expiry checked), the member's requests are counted, the poll is found by the
+audience and expiry checked; while too many verifies have failed LINE is not asked at all),
+the member's requests are counted, the poll is found by the
 unguessable id of its link, and the member must be in the poll's group; only then is the
 poll's content given. A refusal is a `LiffRefusal` that carries an HTTP status and nothing
 else. Votes go to the same poll book as the postback votes. Called by the LIFF router.
@@ -20,6 +21,7 @@ from line_group_agent.liff.id_token_check import user_id_of_claims
 from line_group_agent.liff.liff_members import LiffMembers
 from line_group_agent.liff.poll_view import poll_view_of, unnamed_voter_ids
 from line_group_agent.liff.request_limiter import RequestLimiter
+from line_group_agent.liff.verify_failure_limiter import VerifyFailureLimiter
 from line_group_agent.line_api.line_client import LineApiError
 from line_group_agent.line_api.login_client import LoginClient
 from line_group_agent.polls.poll_book import PollBook, PollLocation
@@ -52,6 +54,7 @@ class LiffPolls:
         login: LoginClient,
         members: LiffMembers,
         limiter: RequestLimiter,
+        verify_failures: VerifyFailureLimiter,
         *,
         login_channel_id: str,
         is_group_allowed: Callable[[str], bool],
@@ -61,19 +64,23 @@ class LiffPolls:
         self.login = login
         self.members = members
         self.limiter = limiter
+        self.verify_failures = verify_failures
         self.login_channel_id = login_channel_id
         self.is_group_allowed = is_group_allowed
         self._clock = clock
 
-    async def show(self, id_token: str, link_id: str) -> dict[str, Any]:
-        """Return the poll of this link as the member sees it."""
-        user_id, location = await self._enter(id_token, link_id)
+    async def show(self, id_token: str, link_id: str, source: str | None) -> dict[str, Any]:
+        """Return the poll of this link as the member sees it. `source` is the address the
+        request came from, or None when it is not known."""
+        user_id, location = await self._enter(id_token, link_id, source)
         return await self._view_of(location, user_id)
 
-    async def vote(self, id_token: str, link_id: str, option_index: int) -> dict[str, Any]:
+    async def vote(
+        self, id_token: str, link_id: str, option_index: int, source: str | None
+    ) -> dict[str, Any]:
         """Count the member's vote on an option of the poll and return the poll as it is then.
         A closed poll is returned unchanged."""
-        user_id, location = await self._enter(id_token, link_id)
+        user_id, location = await self._enter(id_token, link_id, source)
         poll = location.poll
         if not 0 <= option_index < len(poll.options):
             raise LiffRefusal(HTTP_BAD_REQUEST)
@@ -82,8 +89,10 @@ class LiffPolls:
         logger.info("liff: a vote was %s", result.value)
         return await self._view_of(location, user_id)
 
-    async def _enter(self, id_token: str, link_id: str) -> tuple[str, PollLocation]:
-        user_id = await self._verified_user(id_token)
+    async def _enter(
+        self, id_token: str, link_id: str, source: str | None
+    ) -> tuple[str, PollLocation]:
+        user_id = await self._verified_user(id_token, source)
         if not self.limiter.allow(user_id):
             logger.info("liff: refused, too many requests")
             raise LiffRefusal(HTTP_TOO_MANY_REQUESTS)
@@ -100,7 +109,11 @@ class LiffPolls:
             raise LiffRefusal(HTTP_FORBIDDEN)
         return user_id, location
 
-    async def _verified_user(self, id_token: str) -> str:
+    async def _verified_user(self, id_token: str, source: str | None) -> str:
+        blocked_by = self.verify_failures.blocked_by(source)
+        if blocked_by is not None:
+            logger.warning("liff: refused, too many failed verifies (%s limit)", blocked_by)
+            raise LiffRefusal(HTTP_TOO_MANY_REQUESTS)
         try:
             claims = await self.login.verify_id_token(id_token, self.login_channel_id)
         except LineApiError as error:
@@ -112,6 +125,7 @@ class LiffPolls:
             else user_id_of_claims(claims, self.login_channel_id, self._clock().timestamp())
         )
         if user_id is None:
+            self.verify_failures.record_failure(source)
             logger.info("liff: refused, the token did not pass")
             raise LiffRefusal(HTTP_UNAUTHORIZED)
         return user_id

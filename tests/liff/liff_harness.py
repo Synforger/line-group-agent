@@ -16,6 +16,7 @@ from line_group_agent.liff.liff_page import load_liff_page
 from line_group_agent.liff.liff_polls import LiffPolls
 from line_group_agent.liff.liff_router import build_liff_router
 from line_group_agent.liff.request_limiter import RequestLimiter
+from line_group_agent.liff.verify_failure_limiter import VerifyFailureLimiter
 from line_group_agent.line_api.line_client import LineApiError
 from line_group_agent.polls.poll import Poll
 from line_group_agent.polls.poll_book import PollBook
@@ -73,14 +74,30 @@ class Liff:
     poll: Poll
     seconds: list[float]
 
-    def post(self, path: str, body: Any, token: str | None = GOOD_TOKEN) -> Any:
+    def post(
+        self,
+        path: str,
+        body: Any,
+        token: str | None = GOOD_TOKEN,
+        forwarded_for: str | None = None,
+    ) -> Any:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
+        if forwarded_for is not None:
+            headers["X-Forwarded-For"] = forwarded_for
         payload = body if isinstance(body, bytes) else json.dumps(body).encode()
         return self.client.post(path, content=payload, headers=headers)
 
-    def show(self, token: str | None = GOOD_TOKEN, link_id: str | None = None) -> Any:
+    def show(
+        self,
+        token: str | None = GOOD_TOKEN,
+        link_id: str | None = None,
+        forwarded_for: str | None = None,
+    ) -> Any:
         return self.post(
-            "/liff/api/poll", {"p": self.poll.link_id if link_id is None else link_id}, token
+            "/liff/api/poll",
+            {"p": self.poll.link_id if link_id is None else link_id},
+            token,
+            forwarded_for,
         )
 
     def vote(self, option: object, token: str | None = GOOD_TOKEN) -> Any:
@@ -96,11 +113,13 @@ def build_liff(
     multiple: bool = False,
     allowed_groups: frozenset[str] = frozenset({GROUP}),
     max_per_minute: int = 60,
+    max_failed_verifies: int = 30,
+    max_failed_verifies_per_source: int = 10,
     max_body_bytes: int = 1024,
 ) -> Liff:
     """Make a poll `Which?` (Kyoto, Osaka) in the group and a page for it. `MEMBER` and
     `OTHER_MEMBER` are in the group; each has a good token (`GOOD_TOKEN`, `OTHER_TOKEN`).
-    `liff.advance` moves the clock the limiter and the member memory read."""
+    `liff.advance` moves the clock the limiters and the member memory read."""
     clock = Clock()
     polls = PollBook(tmp_path, clock)
     poll = polls.create(GROUP, "Which?", ["Kyoto", "Osaka"], multiple=multiple)
@@ -117,6 +136,9 @@ def build_liff(
         login,  # type: ignore[arg-type]
         LiffMembers(line, clock=lambda: seconds[0]),
         RequestLimiter(max_per_minute, clock=lambda: seconds[0]),
+        VerifyFailureLimiter(
+            max_failed_verifies, max_failed_verifies_per_source, clock=lambda: seconds[0]
+        ),
         login_channel_id=LOGIN_CHANNEL,
         is_group_allowed=lambda group_id: group_id in allowed_groups,
         clock=clock,

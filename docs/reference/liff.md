@@ -31,6 +31,8 @@ poll, and the bot's `poll_results` reads both.
 | `login_channel_id` | none | The channel ID of the LINE Login channel the LIFF app belongs to |
 | `liff_max_requests_per_user_per_minute` | `60` | Requests one member may make to the page's API in a minute |
 | `liff_max_body_bytes` | `1024` | Largest request body the page's API accepts |
+| `liff_max_failed_verifies_per_minute` | `30` | Verifies LINE may refuse in a minute, over all requests, before the agent stops asking |
+| `liff_max_failed_verifies_per_source_per_minute` | `10` | The same, for each source address (the last address of `X-Forwarded-For`, which the proxy in front appends) |
 
 Set `liff_id` and `login_channel_id` together; with neither, the page and its API answer 404
 and poll cards keep their buttons. A poll made before the settings were added has no link and
@@ -72,13 +74,26 @@ Before it gives anything, the agent:
 
 1. asks LINE Login to verify the token (`POST https://api.line.me/oauth2/v2.1/verify` with
    `client_id` set to `login_channel_id`) and checks the audience, the issuer and the expiry
-   itself; the token's `sub` is the member. A token that fails is **401**;
-2. counts the member's requests against `liff_max_requests_per_user_per_minute` (**429**);
+   itself; the token's `sub` is the member. A token that fails is **401**. Failed verifies
+   are counted over the last minute, in all (`liff_max_failed_verifies_per_minute`) and for
+   each source address, the last address of `X-Forwarded-For` (the one the proxy in front
+   appends; earlier ones are written by the caller)
+   (`liff_max_failed_verifies_per_source_per_minute`; without the header only the count of
+   all is kept). While either is at its limit the agent does not ask LINE and the answer is
+   **429**, so a flood of made-up tokens cannot use up the channel's calls to LINE. A verify
+   that succeeds, a request without a token and a LINE outage (503) are not counted; the log
+   holds the number of the limit that was hit, never an address;
+2. counts the member's requests against `liff_max_requests_per_user_per_minute` (also **429**);
 3. looks the poll up by its link id and checks that its group is one the agent answers in;
 4. asks LINE whether the member is in that group (the group member profile; the answer is
    remembered for five minutes). A poll that does not exist, a group that is not allowed and
    a member who is not in the group all give the same **403**, so an id's existence is not
    revealed.
+
+While the limit for all is reached a real member is refused too (429) until the failures are
+a minute old. `X-Forwarded-For` is set by your reverse proxy; one that passes a client's own
+header through lets that client pick a new source each time, and then only the limit for all
+holds.
 
 When LINE cannot be reached for steps 1 or 4 the answer is **503**, not a refusal of the
 member. A body over `liff_max_body_bytes` is **413**, a body that is not the request above
