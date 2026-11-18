@@ -17,6 +17,12 @@ like a chat you keep open. It is kept in the group's record, so it survives a re
   conversation is only ever added to. That keeps the start of each request identical to the
   last one, so the API's prompt cache reads it instead of processing it again.
 
+The record keeps the model's thinking blocks, but they are not sent again after their turn:
+their signature is tied to the system text and the tool list of the request that made them,
+so a changed persona, tool list or version would make the API refuse the whole conversation.
+Inside one turn, between a tool call and its result, they are sent back as they came.
+This holds for the request that writes a summary too.
+
 A tool call that never got its result (for example when the round limit was reached) is
 answered with an error result when the conversation is sent again, so one bad turn does not
 stop the group.

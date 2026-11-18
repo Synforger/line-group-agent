@@ -36,6 +36,7 @@ from line_group_agent.agent.prompt import (
     format_search_results,
 )
 from line_group_agent.agent.slow_answer import is_slow_ahead
+from line_group_agent.agent.thinking_blocks import without_thinking
 from line_group_agent.agent.tool_pairing import pair_tool_calls
 from line_group_agent.agent.turn_output import TurnOutput
 from line_group_agent.cards.card import Card
@@ -140,7 +141,10 @@ class Answerer:
             return Answer(budget.exhausted_text, record=False)
 
         turn = self._user_turn(conversation, mention, is_name_only)
-        messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": turn}])
+        # Thinking of earlier turns is left out of the request (see `thinking_blocks`); the
+        # blocks of this turn's own tool rounds are added below and stay.
+        history = without_thinking(conversation.history())
+        messages = pair_tool_calls([*history, {"role": "user", "content": turn}])
         conversation.add_user(turn)
         conversation.last_turn_message_id = mention.message_id
 

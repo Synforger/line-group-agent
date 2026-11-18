@@ -18,6 +18,7 @@ from datetime import datetime
 from line_group_agent._common.context_usage import is_idle_rollover_due, is_rollover_due
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import summary_request
+from line_group_agent.agent.thinking_blocks import without_thinking
 from line_group_agent.agent.tool_pairing import pair_tool_calls
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
@@ -100,7 +101,7 @@ class Rollover:
             return None
         messages = pair_tool_calls(
             [
-                *conversation.messages,
+                *without_thinking(conversation.messages),
                 {
                     "role": "user",
                     "content": summary_request(after_deletion=conversation.must_roll_over),
