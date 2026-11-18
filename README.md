@@ -15,6 +15,10 @@ short answer. It stays quiet otherwise.
   a local record, so "what did we say about the hotel?" can be answered later.
 - **Looks things up.** Web search and web page reading (server-side tools of the
   Claude API) plus a search over the group's own record.
+- **Shows candidates as cards.** When it lists two or more candidates, it can send
+  them as a row of cards you swipe sideways (a LINE Flex Message carousel): for each
+  one a name, a price, a short line, an optional picture and an "open" button that
+  goes to its page. Up to 10 cards; see [Cards](docs/reference/cards.md).
 - **Says only what it means to say.** Only the text the model puts inside
   `<reply>…</reply>` is sent to the group; its working notes never are.
 - **Stays within a monthly budget.** Each answer's cost is counted from the API's
@@ -33,8 +37,9 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │  1. size cap, signature check, 200 at once
                                                                │  2. allowed group? record the message
                                                                │  3. mentioned? ask the Claude API ──▶ web search / web fetch
-                                                               │                                  └─▶ search_history (local record)
-                                                               └─ 4. reply (or push if the reply token expired)
+                                                               │                                  ├─▶ search_history (local record)
+                                                               │                                  └─▶ show_cards (candidates as cards)
+                                                               └─ 4. reply, text then cards (or push if the reply token expired)
 ```
 
 - The server listens on loopback only. Reaching it from LINE (HTTPS on a public
@@ -133,7 +138,8 @@ How the budget is kept:
   workspace in the Claude Console.
 - A reply uses LINE's reply token and is free. When the model takes longer than
   the token lives (about a minute), the agent sends the answer as a push message
-  instead, which counts against your account's monthly message quota.
+  instead, which counts against your account's monthly message quota. Cards go in
+  the same call as the text, as a second message.
 
 ## Files it writes
 
@@ -141,7 +147,7 @@ All under `state_dir`:
 
 | Path | What |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | Every text message of the group, one JSON object per line (time, message id, user id, display name when LINE gives it, text). Append only |
+| `groups/<groupId>/messages.jsonl` | Every text message of the group and every reply the bot sent (marked `from_bot`; a reply that carried cards ends with a line naming them), one JSON object per line. Append only |
 | `conversations/<tab_name>.jsonl` | What was sent to the model and what it answered, one row per line, for a chat client to show read-only |
 | `spend.json` | This month's spend: `{"month", "spent", "limit", "currency", "updated_at"}`, rewritten whole each time |
 

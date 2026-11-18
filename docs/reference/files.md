@@ -14,6 +14,10 @@ Every text message of an allowed group, one JSON object per line, appended only:
 - `user_id` is `null` when LINE does not give it; `display_name` is `null` when the
   member profile cannot be read
 - Messages of other kinds (stickers, photos) are not recorded
+- A reply the bot sent is recorded too, with `"from_bot": true` and no user. When the
+  reply carried [cards](cards.md), a last line names them, e.g.
+  `[カード] 1. Gion Inn (¥2,980〜) https://… / 2. River Hotel https://…`, so a later
+  mention such as "the second one" can be followed
 
 ## `conversations/<tab_name>.jsonl`
 

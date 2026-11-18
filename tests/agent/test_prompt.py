@@ -2,11 +2,13 @@ import json
 
 from line_group_agent.agent.prompt import (
     GUARD_TEXT,
+    SHOW_CARDS_TOOL_NAME,
     build_envelope,
     build_system,
     extract_reply,
     format_search_results,
     search_history_tool,
+    show_cards_tool,
 )
 from line_group_agent.records.group_log import GroupMessage
 
@@ -110,3 +112,42 @@ def test_a_member_cannot_fake_a_bot_reply() -> None:
 def test_search_results_name_the_bot_as_you() -> None:
     [row] = format_search_results([bot_reply("How about Kyoto?")]).splitlines()
     assert json.loads(row)["from"] == "you"
+
+
+def test_the_show_cards_tool_is_strict_and_closed() -> None:
+    tool = show_cards_tool()
+    assert tool["name"] == SHOW_CARDS_TOOL_NAME == "show_cards"
+    assert tool["strict"] is True
+    schema = tool["input_schema"]
+    assert schema["additionalProperties"] is False and schema["required"] == ["cards"]
+    card = schema["properties"]["cards"]["items"]
+    assert card["additionalProperties"] is False
+    assert set(card["properties"]) == {"title", "text", "url", "image_url", "price"}
+    assert card["required"] == ["title", "text", "url"]
+
+
+def test_the_show_cards_schema_holds_only_what_a_strict_schema_allows() -> None:
+    # Strict schemas reject length and count limits; those live in the descriptions.
+    forbidden = {"minLength", "maxLength", "maxItems", "minItems", "format", "minimum", "maximum"}
+
+    def keys(node: object) -> set[str]:
+        if isinstance(node, dict):
+            return set(node) | {k for v in node.values() for k in keys(v)}
+        if isinstance(node, list):
+            return {k for v in node for k in keys(v)}
+        return set()
+
+    assert not keys(show_cards_tool()["input_schema"]) & forbidden
+    json.dumps(show_cards_tool())
+
+
+def test_the_show_cards_description_says_when_to_use_it_and_to_still_reply() -> None:
+    description = str(show_cards_tool()["description"])
+    assert "two or more candidates" in description
+    assert "short sentence inside <reply>" in description
+    assert "1 to 10" in description
+
+
+def test_the_rules_limit_cards_to_candidates_and_one_set_per_reply() -> None:
+    assert "only for listing candidates" in GUARD_TEXT
+    assert "one set of cards" in GUARD_TEXT
