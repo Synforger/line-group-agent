@@ -149,7 +149,10 @@ class FakeLine:
         names: dict[str, str] | None = None,
         reply_results: list[ReplyResult] | None = None,
         push_statuses: list[int | None] | None = None,
+        members: dict[str, bool | None] | None = None,
     ) -> None:
+        self.members = members or {}
+        self.left_groups: list[str] = []
         self.reply_accepts = reply_accepts
         self.names = names or {}
         self.reply_results = list(reply_results or [])
@@ -194,6 +197,12 @@ class FakeLine:
     async def get_member_name(self, group_id: str, user_id: str) -> str | None:
         self.name_lookups += 1
         return self.names.get(user_id)
+
+    async def is_member(self, group_id: str, user_id: str) -> bool | None:
+        return self.members.get(user_id, False)
+
+    async def leave_group(self, group_id: str) -> None:
+        self.left_groups.append(group_id)
 
     async def close(self) -> None:
         return None

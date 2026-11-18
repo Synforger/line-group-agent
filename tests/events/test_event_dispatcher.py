@@ -308,3 +308,72 @@ async def test_nothing_is_recorded_when_a_cards_only_answer_cannot_be_sent(
     answerer.reply, answerer.cards = None, CARDS
     await dispatcher.handle(text_event(mentions_bot=True))
     assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]
+
+
+OPERATOR = "Uoperator"
+
+
+def guarded(tmp_path: Path, present: bool | None) -> tuple[EventDispatcher, FakeLine]:
+    line = FakeLine(members={OPERATOR: present})
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}),
+        line,
+        GroupLog(tmp_path),
+        ScriptedAnswerer(),
+        required_member_user_id=OPERATOR,
+    )
+    return dispatcher, line
+
+
+def join_event(group_id: str = OTHER) -> dict[str, Any]:
+    return {"type": "join", "replyToken": "t", "source": {"type": "group", "groupId": group_id}}
+
+
+async def test_a_group_without_the_required_member_is_left_at_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    dispatcher, line = guarded(tmp_path, present=False)
+    with caplog.at_level(logging.INFO):
+        await dispatcher.handle(join_event())
+    assert line.left_groups == [OTHER]
+    assert "left a group" in caplog.text and f"group_id={OTHER}" in caplog.text
+    assert line.calls == []
+
+
+async def test_a_group_whose_membership_is_unknown_is_left_too(tmp_path: Path) -> None:
+    dispatcher, line = guarded(tmp_path, present=None)
+    await dispatcher.handle(join_event())
+    assert line.left_groups == [OTHER]
+
+
+async def test_a_group_with_the_required_member_is_kept_and_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    dispatcher, line = guarded(tmp_path, present=True)
+    with caplog.at_level(logging.INFO):
+        await dispatcher.handle(join_event())
+    assert line.left_groups == []
+    assert f"joined a group that is not allowed: group_id={OTHER}" in caplog.text
+
+
+async def test_a_message_from_an_unknown_group_also_triggers_the_check_once(
+    tmp_path: Path,
+) -> None:
+    dispatcher, line = guarded(tmp_path, present=False)
+    await dispatcher.handle(text_event(group_id=OTHER, mentions_bot=True))
+    await dispatcher.handle(text_event(group_id=OTHER, message_id="m2"))
+    assert line.left_groups == [OTHER]
+    assert line.calls == []
+
+
+async def test_allowed_groups_are_never_checked_or_left(tmp_path: Path) -> None:
+    dispatcher, line = guarded(tmp_path, present=False)
+    await dispatcher.handle(join_event(ALLOWED))
+    await dispatcher.handle(text_event())
+    assert line.left_groups == []
+
+
+async def test_without_a_required_member_unknown_groups_are_kept(tmp_path: Path) -> None:
+    dispatcher, line, *_ = setup(tmp_path)
+    await dispatcher.handle(join_event())
+    assert line.left_groups == []

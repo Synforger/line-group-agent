@@ -7,6 +7,10 @@ the next mention sees what the bot said.
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
 
+When a required member is configured, the bot leaves a group that is not on the list
+as soon as it hears from it, unless that member is in the group (LINE is asked; a
+group whose membership cannot be confirmed is left too).
+
 LINE may send an event again after a failed delivery (webhook redelivery). A message
 whose id is already in the group's record is skipped, so it is recorded and answered
 once. A redelivered mention older than the answer window is recorded but not answered.
@@ -32,7 +36,7 @@ from line_group_agent.events.event_fields import (
     is_text_message,
     local_time_of,
 )
-from line_group_agent.line_api.line_client import LineClient
+from line_group_agent.line_api.line_client import LineApiError, LineClient
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
 logger = logging.getLogger(__name__)
@@ -58,6 +62,7 @@ class EventDispatcher:
         answerer: MentionAnswerer,
         *,
         redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
+        required_member_user_id: str | None = None,
     ) -> None:
         self.allowed_group_ids = allowed_group_ids
         self.line = line
@@ -65,6 +70,7 @@ class EventDispatcher:
         self.answerer = answerer
         self._sender = AnswerSender(line)
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
+        self.required_member_user_id = required_member_user_id
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(QUEUE_CAPACITY)
         self._worker: asyncio.Task[None] | None = None
         self._names: dict[tuple[str, str], str | None] = {}
@@ -103,7 +109,7 @@ class EventDispatcher:
         if group_id is None:
             return
         if group_id not in self.allowed_group_ids:
-            self._report_group(event, group_id)
+            await self._handle_unknown_group(event, group_id)
             return
         if not is_text_message(event):
             return
@@ -151,12 +157,32 @@ class EventDispatcher:
             finally:
                 self._queue.task_done()
 
-    def _report_group(self, event: dict[str, Any], group_id: str) -> None:
+    async def _handle_unknown_group(self, event: dict[str, Any], group_id: str) -> None:
+        if group_id in self._reported_groups:
+            return
+        self._reported_groups.add(group_id)
+        if self.required_member_user_id is not None:
+            present = await self.line.is_member(group_id, self.required_member_user_id)
+            if present is not True:
+                await self._leave(group_id)
+                return
         if event.get("type") == "join":
             logger.warning("join: joined a group that is not allowed: group_id=%s", group_id)
-        elif group_id not in self._reported_groups:
+        else:
             logger.warning("events: dropped events of a group not allowed: group_id=%s", group_id)
-        self._reported_groups.add(group_id)
+
+    async def _leave(self, group_id: str) -> None:
+        try:
+            await self.line.leave_group(group_id)
+        except LineApiError as error:
+            logger.warning(
+                "leave: could not leave a group without the required member "
+                "(status %d): group_id=%s",
+                error.status,
+                group_id,
+            )
+            return
+        logger.warning("leave: left a group without the required member: group_id=%s", group_id)
 
     async def _name_of(self, group_id: str, user_id: str | None) -> str | None:
         if user_id is None:
