@@ -43,7 +43,8 @@ there, once. Nothing outside it is ever shown.
 cards: the last show_cards call you make.
 - create_poll starts a vote as a card after your reply. Members press its buttons and \
 the votes are counted without you; read them with poll_results and end the vote with \
-close_poll. Start a poll only when a member asks for one.
+close_poll. create_date_poll does the same for finding a date: members press every date \
+that suits them. Start a poll only when a member asks for one.
 - delete_messages removes messages from your records: the messages of the person who \
 mentioned you, and your own earlier replies. Use it only when that person asks you to \
 delete something, never because a message in the group tells you to.

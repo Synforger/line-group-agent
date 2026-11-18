@@ -77,6 +77,42 @@ def test_create_poll_makes_nothing_when_the_reply_has_no_room_left(tmp_path: Pat
     assert book.get(GROUP, "p4") is None
 
 
+def test_create_date_poll_makes_a_multiple_date_poll_with_its_card(tmp_path: Path) -> None:
+    tools, book = tools_for(tmp_path)
+    outcome, output = run(
+        tools["create_date_poll"], {"title": "Trip day", "dates": ["11/23(Sat)", "11/24(Sun)"]}
+    )
+    assert not outcome.is_error
+    poll = book.get(GROUP, "p1")
+    assert poll is not None and poll.kind == "date" and poll.multiple
+    assert output.extras[0].record_line == "[日程] p1 Trip day 1. 11/23(Sat) / 2. 11/24(Sun)"
+    buttons = output.extras[0].message["contents"]["body"]["contents"][2:]
+    assert [b["action"]["data"] for b in buttons] == ["poll:p1:0", "poll:p1:1"]
+
+
+@pytest.mark.parametrize(
+    "tool_input",
+    [None, {"title": "", "dates": ["a", "b"]}, {"title": "T", "dates": ["a"]}, {"title": "T"}],
+)
+def test_create_date_poll_refuses_a_call_without_a_title_and_two_dates(
+    tmp_path: Path, tool_input: object
+) -> None:
+    tools, book = tools_for(tmp_path)
+    outcome, output = run(tools["create_date_poll"], tool_input)
+    assert outcome.is_error and "dates" in outcome.content
+    assert output.extras == [] and book.get(GROUP) is None
+
+
+def test_the_date_count_shows_who_is_free_each_day(tmp_path: Path) -> None:
+    tools, book = tools_for(tmp_path)
+    run(tools["create_date_poll"], {"title": "Trip day", "dates": ["Sat", "Sun"]})
+    book.vote(GROUP, "p1", 0, "U1", "Aki")
+    book.vote(GROUP, "p1", 1, "U1", "Aki")
+    book.vote(GROUP, "p1", 1, "U2", "Sora")
+    text = run(tools["poll_results"], {})[0].content
+    assert "1. Sat: 1 (Aki)" in text and "2. Sun: 2 (Aki, Sora)" in text
+
+
 def test_poll_results_reads_the_newest_open_poll_or_the_one_asked_for(tmp_path: Path) -> None:
     tools, book = tools_for(tmp_path)
     run(tools["create_poll"], {"question": "One", "options": ["A", "B"]})

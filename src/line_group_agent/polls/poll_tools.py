@@ -1,8 +1,10 @@
-"""The tools the model uses to run polls: make one, read the count, close it.
+"""The tools the model uses to run polls: make a poll or a date poll, read the count, close
+one.
 
 A poll goes out as a card after the reply text; votes are counted by the agent without the
-model (see the postback handler). Called by the service builder, which adds the tools to
-the client tools.
+model (see the postback handler). A date poll is a poll whose options are candidate dates
+and whose buttons switch "that day suits me" on and off. Called by the service builder,
+which adds the tools to the client tools.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Any
 from line_group_agent._common.one_line import one_line
 from line_group_agent.agent.client_tool import ClientTool, ToolOutcome, ToolTurn
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
-from line_group_agent.polls.poll import KIND_CHOICE, Poll
+from line_group_agent.polls.poll import KIND_CHOICE, KIND_DATE, Poll
 from line_group_agent.polls.poll_book import PollBook
 from line_group_agent.polls.poll_message import (
     OPTION_MAX_CHARS,
@@ -23,6 +25,7 @@ from line_group_agent.polls.poll_message import (
 from line_group_agent.polls.poll_text import format_poll_results, poll_record_line
 
 CREATE_POLL_TOOL_NAME = "create_poll"
+CREATE_DATE_POLL_TOOL_NAME = "create_date_poll"
 POLL_RESULTS_TOOL_NAME = "poll_results"
 CLOSE_POLL_TOOL_NAME = "close_poll"
 MIN_OPTION_COUNT = 2
@@ -32,30 +35,46 @@ NO_POLL_RESULT = "There is no such poll in this group."
 BAD_OPTIONS_RESULT = (
     f"Give a question and {MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different, non-empty options."
 )
+BAD_DATES_RESULT = (
+    f"Give a title and {MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different, non-empty dates."
+)
 
 
 def poll_tools(book: PollBook) -> list[ClientTool]:
     """Return the poll tools, working on `book`."""
 
-    def create(tool_input: object, turn: ToolTurn) -> ToolOutcome:
-        fields = tool_input if isinstance(tool_input, dict) else {}
-        question = one_line(fields.get("question"), QUESTION_MAX_CHARS)
-        labels = clean_labels(fields.get("options"))
+    def make(
+        turn: ToolTurn, question: str, labels: list[str] | None, kind: str, *, multiple: bool
+    ) -> ToolOutcome:
         if not question or labels is None:
-            return ToolOutcome(BAD_OPTIONS_RESULT, is_error=True)
+            return ToolOutcome(BAD_DATES_RESULT if kind == KIND_DATE else BAD_OPTIONS_RESULT, True)
         if not turn.output.has_room():
             return ToolOutcome(NO_ROOM_RESULT, is_error=True)
-        poll = book.create(
-            turn.group_id,
-            question,
-            labels,
-            kind=KIND_CHOICE,
-            multiple=fields.get("multiple") is True,
-        )
+        poll = book.create(turn.group_id, question, labels, kind=kind, multiple=multiple)
         turn.output.add(_extra_of(poll))
         return ToolOutcome(
-            f"Poll {poll.id} is sent as a card after your reply. Members vote with its buttons; "
+            f"Poll {poll.id} is sent as a card after your reply. Members press its buttons; "
             "votes are counted without you, so call poll_results when someone asks for the count."
+        )
+
+    def create(tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        fields = tool_input if isinstance(tool_input, dict) else {}
+        return make(
+            turn,
+            one_line(fields.get("question"), QUESTION_MAX_CHARS),
+            clean_labels(fields.get("options")),
+            KIND_CHOICE,
+            multiple=fields.get("multiple") is True,
+        )
+
+    def create_date(tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        fields = tool_input if isinstance(tool_input, dict) else {}
+        return make(
+            turn,
+            one_line(fields.get("title"), QUESTION_MAX_CHARS),
+            clean_labels(fields.get("dates")),
+            KIND_DATE,
+            multiple=True,
         )
 
     def results(tool_input: object, turn: ToolTurn) -> ToolOutcome:
@@ -72,6 +91,7 @@ def poll_tools(book: PollBook) -> list[ClientTool]:
 
     return [
         ClientTool(CREATE_POLL_TOOL_NAME, _create_definition(), create),
+        ClientTool(CREATE_DATE_POLL_TOOL_NAME, _create_date_definition(), create_date),
         ClientTool(POLL_RESULTS_TOOL_NAME, _results_definition(), results),
         ClientTool(CLOSE_POLL_TOOL_NAME, _close_definition(), close),
     ]
@@ -127,6 +147,35 @@ def _create_definition() -> dict[str, Any]:
                 },
             },
             "required": ["question", "options"],
+        },
+    }
+
+
+def _create_date_definition() -> dict[str, Any]:
+    return {
+        "name": CREATE_DATE_POLL_TOOL_NAME,
+        "description": (
+            "Find a date that suits everyone. It is sent as a card after your reply with one "
+            "button per candidate date; a member presses every date that suits them, and "
+            "presses again to take it back. Use it when members need to agree on a date. "
+            "poll_results then gives each date's count and names. Write a short sentence "
+            f"inside <reply> too. Up to {MAX_OPTION_COUNT} dates of at most "
+            f"{OPTION_MAX_CHARS} characters each, like 11/23(Sat)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": f"What it is for, up to {QUESTION_MAX_CHARS} characters.",
+                },
+                "dates": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": f"{MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different dates.",
+                },
+            },
+            "required": ["title", "dates"],
         },
     }
 

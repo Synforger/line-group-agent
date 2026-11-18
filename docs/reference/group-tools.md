@@ -24,3 +24,14 @@ no message and adds no noise to the group.
 A vote is counted only when LINE tells the agent which member pressed the button (the member's
 user id). A press that arrives without one cannot be told from another member's press, so it
 is not counted, and the agent logs one line saying so.
+
+## Finding a date
+
+When members need to agree on a date, the bot sends a date poll: a card with one button per
+candidate date (up to 10). A member presses every date that suits them, and presses again to
+take one back. Counting is the same as for polls: "which day works best?" makes the bot read
+each date's count and who marked it, and "close it" ends the poll. The record line starts
+with `[日程]`.
+
+The cards use plain buttons; LINE's date picker is not used, because LINE does not say it is
+available in group chats.
