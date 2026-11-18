@@ -20,6 +20,7 @@ from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import build_system
 from line_group_agent.agent.rollover import Rollover
 from line_group_agent.alerts.alert_notifier import AlertNotifier
+from line_group_agent.bills.bill_tools import bill_tools
 from line_group_agent.config.agent_config import AgentConfig, ConfigError, load_secrets
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.event_dispatcher import EventDispatcher, NoticeTexts
@@ -74,7 +75,7 @@ def build_app(config: AgentConfig) -> FastAPI:
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
     polls = PollBook(config.state_dir, clock)
     itineraries = ItineraryBook(config.state_dir, clock)
-    client_tools = ClientTools([*poll_tools(polls), *itinerary_tools(itineraries)])
+    client_tools = ClientTools([*poll_tools(polls), *itinerary_tools(itineraries), *bill_tools()])
     caller = ModelCaller(
         config,
         client,

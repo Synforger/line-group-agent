@@ -50,3 +50,17 @@ like `1日目 (11/23)`, and may be up to 4,000 characters (what one LINE message
   punctuation around it are ignored) gets the saved itinerary exactly as it is, without the
   model, so it costs nothing. That reply is not recorded as a turn. When no itinerary is saved
   yet, the model answers as for any mention
+
+## Splitting costs
+
+When members ask to split what they spent ("Aki paid 9,000 for dinner, Sora paid 3,000 for
+the train for Aki and Sora, split it"), the bot hands the payments to a tool that does the
+sums in code, so the amounts are exact. For each member it gives what they paid, their share
+and the difference, and the fewest transfers that settle everyone (a "who pays whom" list).
+The model then tells the group.
+
+- Amounts are whole yen. A payment is for everyone or for the members named
+- When a payment does not divide evenly among the people it was for, the remaining yen (fewer
+  than one per person) are taken by the person who paid, so nobody is asked for a fraction of
+  a yen. The result says how many yen that was and the bot is told to mention it
+- Nothing is stored: the tool calculates from what the model gives it each time
