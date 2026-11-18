@@ -22,45 +22,47 @@ tasks:
       - task --list
 
   # ---------------------------------------------------------------------------
-  # Stack stubs — replace each echo with your project's real command (or
-  # define them in Taskfile.local.yml, which is included when present).
-  # Keeping the task names stable means every derived repo answers to the
-  # same verbs regardless of language.
+  # Stack verbs — every derived repo answers to the same names; these are
+  # line-group-agent's commands (one Python package, managed with uv).
   # ---------------------------------------------------------------------------
   setup:
-    desc: Initial setup (stub — fill in your stack's dependency install)
+    desc: Install the agent and its dev tools into .venv (uv, Python 3.12)
     cmds:
-      - echo "task setup is a stub — define your stack's install command here or in Taskfile.local.yml"
+      - uv sync --python 3.12
 
   update:
-    desc: Update dependencies (stub)
+    desc: Upgrade locked dependencies
     cmds:
-      - echo "task update is a stub — define your stack's update command"
+      - uv lock --upgrade
+      - uv sync --python 3.12
 
   lint:
-    desc: Run lint (stub)
+    desc: Lint and format-check the package and its tests (ruff)
     cmds:
-      - echo "task lint is a stub — define your stack's linter"
+      - uv run ruff check src tests
+      - uv run ruff format --check src tests
 
   test:unit:
-    desc: Run unit tests (stub)
+    desc: Run the unit tests (pytest; LINE and the Anthropic API are faked)
     cmds:
-      - echo "task test:unit is a stub — define your stack's unit test command"
+      - uv run pytest -q
 
   test:integration:
-    desc: Run integration tests (stub)
+    desc: No integration suite; the webhook is exercised end to end in test:unit
     cmds:
-      - echo "task test:integration is a stub — define your stack's integration test command"
+      - echo "no integration tests"
 
   build:
-    desc: Build artefacts (stub)
+    desc: Build the wheel
     cmds:
-      - echo "task build is a stub — define your stack's build command"
+      - uv build
 
   run:
-    desc: Run the application (stub)
+    desc: Start the agent (CONFIG=<path to config JSON>)
+    requires:
+      vars: [CONFIG]
     cmds:
-      - echo "task run is a stub — define your stack's run command"
+      - uv run line-group-agent --config "{{.CONFIG}}"
 
   # ---------------------------------------------------------------------------
   # Language-neutral quality gates (no delegation).
@@ -100,9 +102,11 @@ tasks:
       - bash .tooling/local-ci/lint-versions.sh
 
   gen-notices:
-    desc: Regenerate THIRD_PARTY_NOTICES.md from the installed dep tree (python + node)
+    desc: Regenerate THIRD_PARTY_NOTICES.md from the runtime dependencies (dev tools left out)
     cmds:
-      - python3 scripts/gen-third-party-notices.py
+      - uv sync --python 3.12 --no-dev
+      - uv run --no-sync --with pip-licenses python3 scripts/gen-third-party-notices.py
+      - uv sync --python 3.12
 
   audit:
     desc: Aggregate security audit (anon-scan + gitleaks full history + pip-audit + npm audit)

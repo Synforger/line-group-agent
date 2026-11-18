@@ -1,10 +1,5 @@
 # Security Policy
 
-> Replace `Synforger/line-group-agent` / `Synforger` / `{{threat_model}}`
-> placeholders during `python personalize.py`. This file is a template;
-> derived repos should customise the threat model + supported versions
-> sections for their own deployment surface.
-
 ## Reporting a vulnerability
 
 Use **GitHub Security Advisories private vulnerability reporting** to
@@ -18,7 +13,7 @@ Do not file public Issues or PRs for security-relevant findings. Public
 discussion only after a fix has shipped and end users have had time to
 update.
 
-If GitHub access is unavailable, reach `Synforger` via the
+If GitHub access is unavailable, reach `@Synforger` via the
 contact channel listed in the repo's README.
 
 ## Supported versions
@@ -35,22 +30,41 @@ your environment requires reproducibility.
 
 ## Threat model
 
-`{{threat_model}}` — fill this in with the deployment context. Example
-shapes:
+line-group-agent runs on one operator's machine and is reached by the LINE
+Platform through an HTTPS entry the operator puts in front of it.
 
-- "Local CLI installed by individual developers" — threats = malicious
-  input files, dependency confusion, sandbox escape
-- "Public web service" — threats = unauthenticated request handling,
-  rate limit bypass, secret leakage in logs
-- "Library consumed by third-party apps" — threats = privilege
-  escalation via embedded usage, supply chain via published artefact
+- The server binds to loopback (`127.0.0.1`) by default and serves one endpoint,
+  `POST /line/webhook`. A request is accepted only when its `X-Line-Signature`
+  is the HMAC-SHA256 of the raw body under the channel secret (compared in
+  constant time); the body is size-capped before that. Anyone who holds the
+  channel secret can send events as LINE would.
+- Messages of the groups in `allowed_group_ids` are stored in plain text under
+  `state_dir`, and the recent ones are sent to the Claude API when the bot is
+  mentioned. Members of those groups should know this. Events of other groups
+  are dropped; only their group id is logged.
+- Group messages are untrusted input. They reach the model inside an envelope
+  and the system text tells it to read them as data. The model's tools are
+  limited to web search, web page reading and a search over the same group's
+  record; it has no tool that writes, books, pays or reaches the host. Only the
+  text inside `<reply>…</reply>` is sent, and only to the group it was asked in.
+  A member can still steer what the bot says in that group.
+- Web page reading only fetches URLs that already appeared in the
+  conversation (a rule of the Claude API), so a page cannot make the bot fetch a
+  URL it made up.
+- Secrets live in files named by the configuration, are read once at start and
+  are never logged. Logs hold no message text, tokens or signatures. Settings
+  come only from the configuration file: credential, address, proxy and tracing
+  variables in the environment have no effect.
+- Spending is capped by the monthly limit in the configuration; a spend limit
+  on the API key's workspace is the second guard.
 
 ## In scope
 
 - Authentication / authorization flaws (= when applicable)
 - Sensitive data leakage (= secrets in logs / errors / responses)
-- Path traversal / SSRF / SQLi / XSS / RCE in code paths the
-  template's own scripts execute
+- Path traversal / SSRF / RCE in the agent's own code paths
+- Group content making the agent reveal data of another group, its secrets,
+  or anything outside its state folder
 - Dependency vulnerabilities surfaced by `task audit`
 
 ## Out of scope
@@ -70,7 +84,7 @@ The maintainer runs `task audit` (= `pip-audit` + `npm audit` +
 
 | date | findings | resolution |
 |---|---|---|
-| YYYY-MM-DD | (initial) | template scaffold |
+| 2026-11-18 | (initial) | first release, no findings |
 
 ## Upstream redirect
 

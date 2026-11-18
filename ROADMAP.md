@@ -1,31 +1,32 @@
-# Roadmap — `Synforger/line-group-agent`
+# Roadmap — Synforger/line-group-agent
 
-> 個人プロジェクトです。 「今安定して使えるのか / 何が作りかけか」 を判断するための一覧。
-> このファイルの `Synforger/line-group-agent` は `task init` が origin から埋める。
+> A personal project. This page says what works today, what may come next, and what is not planned.
 
-## いま使えること
+## Works today
 
-- (派生時に列挙)
+- Receives LINE webhooks on loopback only: one endpoint, a body size cap, the signature checked on the raw body before anything is read, and an answer of 200 before any work
+- Keeps every text message of the allowed groups in a local, append-only record; events of other groups are dropped, and only their group id is logged
+- Answers only when the bot itself is mentioned, with Claude: recent messages, the web (search and page reading) and a search over the group's record
+- Sends only the text inside `<reply>…</reply>`, one message per mention, by reply token, falling back to a push when the token has expired
+- Keeps a conversation record and a monthly spend file that a chat client can show read-only
+- Stops calling the API, with a fixed reply, when one more answer could pass the monthly limit
 
-## 今後やる予定 (= committed)
+## May come next
 
-- (派生時に列挙)
+- Cards with buttons for votes and choices (Flex Message), and counting the votes
+- A date picker button for finding a date that suits everyone
+- Reading photos and locations sent to the group
+- Deleting messages from the record on request, and a retention period for the record
+- Small in-app pages (LIFF) such as a shared itinerary
+- Messages the bot sends without being mentioned (push)
 
-## 検討中 (= まだ着手していない、 仕様も未確定)
+## Not planned
 
-- (派生時に列挙)
+- Booking, paying or any action outside the group: the agent only looks things up and answers
+- Access to anything on the host other than its own state folder and the files its configuration names
+- Authentication inside the server beyond LINE's signature: exposing the port is the job of the HTTPS entry in front of it (see [SECURITY.md](SECURITY.md))
 
-## 採用しない方針 (= 過去に検討、 不採用判断、 再提案 NG)
+## Bug reports / feature requests
 
-- (派生時に列挙)
-
-## バグ報告 / 機能要望
-
-- セキュリティ脆弱性: [SECURITY.md](SECURITY.md)
-- 機能要望 / 一般バグ: GitHub Issues 経由で報告 (= PR も歓迎)。 ただし**個人プロジェクトなので応答は best effort**、 LTS 約束なし
-- 開発の方向性に直結する根本的な機能要望: 検討中 section の review trigger になる
-- 「自分で fork して直したい」 場合は LICENSE (Apache-2.0) の許諾範囲で自由
-
-## 過去の release
-
-各 release の note は GitHub Releases tab を参照。
+- Security issues: [SECURITY.md](SECURITY.md)
+- Everything else: GitHub Issues (pull requests welcome). Responses are best effort.
