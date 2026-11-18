@@ -33,7 +33,9 @@ class ScriptedAnswerer:
         self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
     ) -> Answer:
         self.calls.append((group_id, mention))
-        return Answer(self.reply, self.cards)
+        return Answer(self.reply, self.cards, record=self.record)
+
+    record = True
 
 
 def text_event(
@@ -497,3 +499,11 @@ async def test_a_group_that_is_not_allowed_is_not_reported_to_the_observer(
     dispatcher, observer = observed(tmp_path)
     await dispatcher.handle(text_event(OTHER))
     assert observer.calls == []
+
+
+async def test_a_notice_that_took_no_turn_is_sent_but_not_recorded(tmp_path: Path) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path)
+    answerer.record = False
+    await dispatcher.handle(text_event(mentions_bot=True))
+    assert line.replies == [("reply-token-1", "Sure.")]
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]

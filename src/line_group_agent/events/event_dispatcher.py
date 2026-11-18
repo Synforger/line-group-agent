@@ -241,7 +241,7 @@ class EventDispatcher:
             logger.info("answer: no reply to send")
             return
         sent = await self._sender.send(group_id, reply_token, answer, quote_token=quote_token)
-        if sent is not None:
+        if sent is not None and answer.record:
             self.group_log.add(group_id, _bot_reply(sent))
 
     async def _tell_rate_limit(self, group_id: str, event: dict[str, Any]) -> None:

@@ -53,6 +53,10 @@ class Answer:
 
     text: str | None
     cards: list[Card] = field(default_factory=list)
+    # False for a notice sent without taking a turn (the budget text): recording it as
+    # the bot's reply would move the "since your last turn" window past messages the
+    # model has not seen yet.
+    record: bool = True
 
 
 class Answerer:
@@ -99,7 +103,7 @@ class Answerer:
         estimate = mention_estimate_usd(self.config, context_tokens=conversation.context_tokens)
         if not self.books.can_afford(group_id, to_currency(estimate, budget)):
             logger.info("answer: budget left is below one mention; not calling the API")
-            return Answer(budget.exhausted_text)
+            return Answer(budget.exhausted_text, record=False)
 
         envelope = self._envelope(conversation, mention)
         messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": envelope}])

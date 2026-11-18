@@ -170,7 +170,9 @@ async def test_no_call_when_the_month_cannot_cover_one_more_mention(tmp_path: Pa
         tmp_path, [text_answer("<reply>x</reply>")]
     )
     ledger.add(995)
-    assert await answerer.answer(GROUP, mention()) == Answer("This month's budget is used up.")
+    assert await answerer.answer(GROUP, mention()) == Answer(
+        "This month's budget is used up.", record=False
+    )
     assert client.messages.requests == []
     assert not conversation_log.path.exists()
 
@@ -178,7 +180,7 @@ async def test_no_call_when_the_month_cannot_cover_one_more_mention(tmp_path: Pa
 async def test_the_budget_text_is_configurable(tmp_path: Path) -> None:
     budget = {"monthly_limit": 0, "currency_per_usd": 150, "exhausted_text": "Done for now."}
     answerer, client, *_ = build(tmp_path, [], budget=budget)
-    assert await answerer.answer(GROUP, mention()) == Answer("Done for now.")
+    assert await answerer.answer(GROUP, mention()) == Answer("Done for now.", record=False)
     assert client.messages.requests == []
 
 
