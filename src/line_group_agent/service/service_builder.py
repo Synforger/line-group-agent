@@ -82,6 +82,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         answerer,
         redelivered_answer_window_seconds=config.redelivered_answer_window_seconds,
         required_member_user_id=config.required_member_user_id,
+        call_names=config.call_names,
         allow_groups_with_required_member=config.allow_groups_with_required_member,
         observer=watcher,
         texts=NoticeTexts(

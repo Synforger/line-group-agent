@@ -5,6 +5,7 @@ Pure functions over the parsed JSON; called by the event dispatcher.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -50,6 +51,38 @@ def is_self_mentioned(event: dict[str, Any]) -> bool:
     mention = message.get("mention") or {}
     mentionees = mention.get("mentionees") or []
     return any(isinstance(m, dict) and m.get("isSelf") is True for m in mentionees)
+
+
+# What may sit around a name used to call the bot: spaces, and the punctuation people
+# put after a name ("ソラ、" "sora," "SORA!").
+_EDGE = " \t\u3000、。,.!！?？~〜ー…"
+
+
+def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
+    """Return whether a text message starts or ends with one of `names` (any case).
+
+    A name only counts at the start or the end, so a message that merely talks about
+    the bot in the middle of a sentence is not taken as a call. At the start the name
+    must be followed by a space or punctuation ("ソラ、" calls, "ソラって便利" does
+    not); at the end a Latin name must not be the tail of a longer word.
+    """
+    message = event.get("message") or {}
+    text = message.get("text")
+    if not isinstance(text, str) or not names:
+        return False
+    body = text.strip(_EDGE).casefold()
+    for name in names:
+        key = name.casefold()
+        after = body[len(key) : len(key) + 1]
+        if body.startswith(key) and (not after or after in _EDGE):
+            return True
+        if body.endswith(key) and not _runs_on(body[-len(key) - 1 : -len(key)]):
+            return True
+    return False
+
+
+def _runs_on(neighbour: str) -> bool:
+    return bool(neighbour) and bool(re.match(r"[a-z0-9]", neighbour))
 
 
 def is_redelivery(event: dict[str, Any]) -> bool:

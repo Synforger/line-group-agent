@@ -551,3 +551,14 @@ async def test_without_a_help_file_the_keyword_is_an_ordinary_mention(tmp_path: 
     dispatcher, _, _, answerer = setup(tmp_path)
     await dispatcher.handle(mention_text_event("@bot help"))
     assert len(answerer.calls) == 1
+
+
+async def test_a_message_that_calls_the_bot_by_name_is_answered(tmp_path: Path) -> None:
+    line = FakeLine(names={"U1": "Aki"})
+    answerer = ScriptedAnswerer()
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}), line, GroupLog(tmp_path), answerer, call_names=("ソラ",)
+    )
+    await dispatcher.handle(text_event(text="ソラ、明日どこ行く?"))
+    await dispatcher.handle(text_event(text="ソラって便利だね", message_id="m2"))
+    assert len(answerer.calls) == 1

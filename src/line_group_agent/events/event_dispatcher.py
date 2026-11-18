@@ -49,6 +49,7 @@ from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
     age_seconds_of,
     group_id_of,
+    is_called_by_name,
     is_redelivery,
     is_self_mentioned,
     is_text_message,
@@ -109,6 +110,7 @@ class EventDispatcher:
         *,
         redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         required_member_user_id: str | None = None,
+        call_names: tuple[str, ...] = (),
         allow_groups_with_required_member: bool = False,
         observer: GroupObserver | None = None,
         texts: NoticeTexts | None = None,
@@ -129,6 +131,7 @@ class EventDispatcher:
         self.deleter = deleter
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
+        self.call_names = call_names
         self.allow_groups_with_required_member = allow_groups_with_required_member
         self.observer = observer
         self._clock = clock
@@ -200,7 +203,7 @@ class EventDispatcher:
         if self.observer is not None:
             await self.observer.note_message(group_id, record)
 
-        if not is_self_mentioned(event):
+        if not (is_self_mentioned(event) or is_called_by_name(event, self.call_names)):
             return
         if is_redelivery(event) and self._is_too_old(event):
             logger.info("answer: a redelivered mention is past the answer window; not answered")
