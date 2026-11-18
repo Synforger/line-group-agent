@@ -10,7 +10,8 @@ Around a mention: one person may call the bot only so many times an hour (then t
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
 A message a member takes back (unsend) is deleted from the records. When the bot joins
-an allowed group it introduces itself with a fixed text.
+an allowed group it introduces itself with a fixed text. A button press on a poll card
+(a postback) is counted as a vote and not answered.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -54,10 +55,13 @@ from line_group_agent.events.event_fields import (
     is_self_mentioned,
     is_text_message,
     local_time_of,
+    postback_of,
     quote_token_of,
     unsent_message_id_of,
+    webhook_event_id_of,
 )
 from line_group_agent.events.mention_limiter import MentionLimiter, MentionVerdict
+from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.line_api.line_client import LineApiError, LineClient
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -117,6 +121,7 @@ class EventDispatcher:
         limiter: MentionLimiter | None = None,
         wait_notice: WaitNotice | None = None,
         deleter: MessageDeleter | None = None,
+        postbacks: PostbackHandler | None = None,
         notifier: AlertNotifier | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -129,6 +134,7 @@ class EventDispatcher:
         self.limiter = limiter
         self.wait_notice = wait_notice
         self.deleter = deleter
+        self.postbacks = postbacks
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
@@ -181,6 +187,9 @@ class EventDispatcher:
             return
         if (unsent_id := unsent_message_id_of(event)) is not None:
             await self._forget(group_id, unsent_id)
+            return
+        if (postback := postback_of(event)) is not None:
+            await self._count_vote(group_id, event, *postback)
             return
         if not is_text_message(event):
             return
@@ -290,6 +299,19 @@ class EventDispatcher:
         self.group_log.add(group_id, record)
         if self.observer is not None:
             await self.observer.note_message(group_id, record)
+
+    async def _count_vote(
+        self, group_id: str, event: dict[str, Any], data: str, user_id: str | None
+    ) -> None:
+        if self.postbacks is None:
+            return
+        self.postbacks.handle(
+            group_id,
+            data=data,
+            user_id=user_id,
+            display_name=await self._name_of(group_id, user_id),
+            event_id=webhook_event_id_of(event),
+        )
 
     async def _forget(self, group_id: str, message_id: str) -> None:
         if self.deleter is None:

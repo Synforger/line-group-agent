@@ -30,6 +30,7 @@ from tests.fakes import FakeAnthropic, FakeLine, make_config
 
 TOKYO = timezone(timedelta(hours=9))
 GROUP = "Callowed"
+NOW_FOR_TESTS = datetime(2026, 11, 18, 12, 0, tzinfo=TOKYO)
 
 
 class Clock:

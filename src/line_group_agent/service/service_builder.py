@@ -14,6 +14,7 @@ import httpx2
 from fastapi import FastAPI
 
 from line_group_agent.agent.answerer import Answerer
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import build_system
@@ -24,9 +25,12 @@ from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.event_dispatcher import EventDispatcher, NoticeTexts
 from line_group_agent.events.group_watcher import GroupWatcher
 from line_group_agent.events.mention_limiter import MentionLimiter
+from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.line_api.push_quota import PushQuota
+from line_group_agent.polls.poll_book import PollBook
+from line_group_agent.polls.poll_tools import poll_tools
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 from line_group_agent.records.retention_sweeper import RetentionSweeper
@@ -66,9 +70,20 @@ def build_app(config: AgentConfig) -> FastAPI:
     client = create_anthropic_client(secrets.anthropic_api_key)
     line = LineClient(secrets.line_channel_access_token)
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
-    caller = ModelCaller(config, client, build_system(persona), books, observer=notifier)
+    polls = PollBook(config.state_dir, clock)
+    client_tools = ClientTools(poll_tools(polls))
+    caller = ModelCaller(
+        config,
+        client,
+        build_system(persona),
+        books,
+        observer=notifier,
+        extra_tools=client_tools.definitions(),
+    )
     deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
-    answerer = Answerer(config, caller, group_log, conversations, books, deleter)
+    answerer = Answerer(
+        config, caller, group_log, conversations, books, deleter, client_tools=client_tools
+    )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(
@@ -100,6 +115,7 @@ def build_app(config: AgentConfig) -> FastAPI:
             min_push_left=config.wait_min_push_left,
         ),
         deleter=deleter,
+        postbacks=PostbackHandler(polls),
         notifier=notifier,
     )
     return create_app(

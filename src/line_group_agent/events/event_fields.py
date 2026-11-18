@@ -45,6 +45,24 @@ def unsent_message_id_of(event: dict[str, Any]) -> str | None:
     return message_id if isinstance(message_id, str) and message_id else None
 
 
+def postback_of(event: dict[str, Any]) -> tuple[str, str | None] | None:
+    """Return the data of a postback event and the id of the member who pressed the button
+    (None when LINE gives none), or None for any other event."""
+    if event.get("type") != "postback":
+        return None
+    data = (event.get("postback") or {}).get("data")
+    if not isinstance(data, str) or not data:
+        return None
+    user_id = (event.get("source") or {}).get("userId")
+    return data, user_id if isinstance(user_id, str) and user_id else None
+
+
+def webhook_event_id_of(event: dict[str, Any]) -> str | None:
+    """Return the id LINE gives an event (the same one when it sends the event again)."""
+    event_id = event.get("webhookEventId")
+    return event_id if isinstance(event_id, str) and event_id else None
+
+
 def is_self_mentioned(event: dict[str, Any]) -> bool:
     """Return whether the message mentions this bot (LINE marks it `isSelf: true`)."""
     message = event.get("message") or {}

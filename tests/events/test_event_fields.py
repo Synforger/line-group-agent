@@ -8,8 +8,10 @@ from line_group_agent.events.event_fields import (
     is_self_mentioned,
     is_text_message,
     local_time_of,
+    postback_of,
     quote_token_of,
     unsent_message_id_of,
+    webhook_event_id_of,
 )
 
 
@@ -133,3 +135,26 @@ def test_a_name_in_the_middle_or_inside_a_word_does_not(text: str) -> None:
 
 def test_no_names_means_no_call() -> None:
     assert not is_called_by_name(said("ソラ、ねえ"), ())
+
+
+def test_a_postback_gives_its_data_and_who_pressed() -> None:
+    event = {
+        "type": "postback",
+        "source": {"type": "group", "groupId": "Cg", "userId": "U1"},
+        "postback": {"data": "poll:p1:0"},
+    }
+    assert postback_of(event) == ("poll:p1:0", "U1")
+    without_user = {**event, "source": {"type": "group", "groupId": "Cg"}}
+    assert postback_of(without_user) == ("poll:p1:0", None)
+
+
+def test_an_event_that_is_not_a_postback_with_data_gives_none() -> None:
+    assert postback_of(text_event()) is None
+    assert postback_of({"type": "postback", "postback": {}}) is None
+    assert postback_of({"type": "postback", "postback": {"data": ""}}) is None
+
+
+def test_the_webhook_event_id_is_read_when_there_is_one() -> None:
+    assert webhook_event_id_of({"webhookEventId": "01H"}) == "01H"
+    assert webhook_event_id_of({"webhookEventId": ""}) is None
+    assert webhook_event_id_of({}) is None

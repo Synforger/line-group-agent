@@ -1,0 +1,26 @@
+# Tools for the group
+
+Besides searching the web and the group's record, the bot has a few tools that work on the
+group itself. The model decides when to use one, from what a member asks. Each tool keeps its
+data in the group's own folder under `state_dir` (see [files.md](files.md)), and counting,
+saving and sums are done by the agent in code, not by the model.
+
+## Polls
+
+A member can ask the bot to start a vote ("vote on where to go: Kyoto or Osaka"). The bot
+sends a card after its reply: the question and one button per option, up to 10 options of 20
+characters each. Pressing a button casts a vote and the bot says nothing back, so a vote costs
+no message and adds no noise to the group.
+
+- One vote each by default. Pressing another option moves the vote; pressing the same option
+  again takes it back. With "pick several" (`multiple`) each option is its own switch
+- A mention such as "how is the vote going?" makes the bot read the count (the model reports
+  it, and may show it as cards). "Close the vote" ends the poll; a closed poll takes no more
+  votes. Without an id the newest open poll is meant; polls are numbered `p1`, `p2` … in the
+  group, and the newest 50 are kept
+- The poll is written into the group's record as one line (`[投票] p1 Where? 1. Kyoto / 2.
+  Osaka`), so a later mention can refer to it
+
+A vote is counted only when LINE tells the agent which member pressed the button (the member's
+user id). A press that arrives without one cannot be told from another member's press, so it
+is not counted, and the agent logs one line saying so.

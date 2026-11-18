@@ -52,6 +52,15 @@ over. The file holds the summary text only. The next conversation opens with it.
 files are never deleted by the agent, and the highest `N` tells which generation a
 conversation is in.
 
+## `groups/<groupId>/polls.json`
+
+The group's [polls](group-tools.md#polls), replaced whole at each change (a new poll, a vote, a
+close). The newest 50 polls are kept:
+
+```json
+{"last_number": 2, "polls": [{"id": "p2", "kind": "choice", "question": "Where?", "multiple": false, "is_closed": false, "created_at": "2026-11-18T12:00:00+09:00", "options": [{"label": "Kyoto", "voters": [{"user_id": "U0123…", "name": "Aki"}]}, {"label": "Osaka", "voters": []}]}]}
+```
+
 ## `groups/<groupId>/spend.json`
 
 The group's month, in the same form as `spend.json` below. Its `limit` is the overall limit

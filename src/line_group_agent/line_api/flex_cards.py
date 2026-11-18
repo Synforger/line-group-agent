@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from line_group_agent._common.one_line import cut_with_ellipsis
 from line_group_agent.cards.card import Card
-from line_group_agent.cards.card_input import cut_with_ellipsis
 
 ALT_TEXT_PREFIX = "候補: "
 ALT_TEXT_SEPARATOR = " / "
