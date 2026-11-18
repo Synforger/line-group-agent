@@ -2,8 +2,9 @@
 `POST /liff/api/poll` and `POST /liff/api/vote` (the poll's content, for a verified member).
 
 The ID token comes in the `Authorization: Bearer` header, the poll's link id and the option
-in a small JSON body; the first address of `X-Forwarded-For` (set by the reverse proxy) names
-where a request came from. Every answer says `Cache-Control: no-store`; a refusal is a bare status
+in a small JSON body; the last address of `X-Forwarded-For` (the one the reverse proxy in
+front appends; the earlier ones are written by the caller) names where a request came from.
+Every answer says `Cache-Control: no-store`; a refusal is a bare status
 with a one-word error and no detail. Built by the service builder and added to the web app.
 """
 
@@ -102,10 +103,11 @@ def _token_of(request: Request) -> str:
 
 
 def _source_of(request: Request) -> str | None:
-    """Return the first address of `X-Forwarded-For`, or None when there is none (or it is
-    longer than any address)."""
-    first = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return first if 0 < len(first) <= MAX_SOURCE_CHARS else None
+    """Return the last address of `X-Forwarded-For`, the one the proxy in front appended,
+    or None when there is none (or it is longer than any address). The earlier addresses
+    come from the caller and could be anything."""
+    last = request.headers.get("x-forwarded-for", "").split(",")[-1].strip()
+    return last if 0 < len(last) <= MAX_SOURCE_CHARS else None
 
 
 def _object_of(raw: bytes) -> dict[str, Any]:

@@ -32,7 +32,7 @@ poll, and the bot's `poll_results` reads both.
 | `liff_max_requests_per_user_per_minute` | `60` | Requests one member may make to the page's API in a minute |
 | `liff_max_body_bytes` | `1024` | Largest request body the page's API accepts |
 | `liff_max_failed_verifies_per_minute` | `30` | Verifies LINE may refuse in a minute, over all requests, before the agent stops asking |
-| `liff_max_failed_verifies_per_source_per_minute` | `10` | The same, for each source address (the first address of `X-Forwarded-For`) |
+| `liff_max_failed_verifies_per_source_per_minute` | `10` | The same, for each source address (the last address of `X-Forwarded-For`, which the proxy in front appends) |
 
 Set `liff_id` and `login_channel_id` together; with neither, the page and its API answer 404
 and poll cards keep their buttons. A poll made before the settings were added has no link and
@@ -76,7 +76,8 @@ Before it gives anything, the agent:
    `client_id` set to `login_channel_id`) and checks the audience, the issuer and the expiry
    itself; the token's `sub` is the member. A token that fails is **401**. Failed verifies
    are counted over the last minute, in all (`liff_max_failed_verifies_per_minute`) and for
-   each source address, the first address of `X-Forwarded-For`
+   each source address, the last address of `X-Forwarded-For` (the one the proxy in front
+   appends; earlier ones are written by the caller)
    (`liff_max_failed_verifies_per_source_per_minute`; without the header only the count of
    all is kept). While either is at its limit the agent does not ask LINE and the answer is
    **429**, so a flood of made-up tokens cannot use up the channel's calls to LINE. A verify

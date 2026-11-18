@@ -33,11 +33,11 @@ def test_a_source_over_its_limit_is_429_while_another_source_still_gets_through(
     assert liff.show(GOOD_TOKEN, forwarded_for="2.2.2.2").status_code == 200
 
 
-def test_only_the_first_address_of_x_forwarded_for_names_the_source(tmp_path: Path) -> None:
+def test_only_the_last_address_of_x_forwarded_for_names_the_source(tmp_path: Path) -> None:
     liff = build_liff(tmp_path, max_failed_verifies_per_source=1)
     assert liff.show(BAD_TOKEN, forwarded_for="1.1.1.1, 9.9.9.9").status_code == 401
-    assert liff.show(GOOD_TOKEN, forwarded_for="1.1.1.1, 8.8.8.8").status_code == 429
-    assert liff.show(GOOD_TOKEN, forwarded_for="9.9.9.9").status_code == 200
+    assert liff.show(GOOD_TOKEN, forwarded_for="8.8.8.8, 9.9.9.9").status_code == 429
+    assert liff.show(GOOD_TOKEN, forwarded_for="1.1.1.1").status_code == 200
 
 
 def test_without_x_forwarded_for_only_the_limit_for_all_applies(tmp_path: Path) -> None:
@@ -46,8 +46,8 @@ def test_without_x_forwarded_for_only_the_limit_for_all_applies(tmp_path: Path) 
     assert liff.show(GOOD_TOKEN).status_code == 429
 
 
-@pytest.mark.parametrize("header", ["", " , 1.1.1.1", "x" * 65])
-def test_an_empty_or_too_long_first_address_is_no_source(tmp_path: Path, header: str) -> None:
+@pytest.mark.parametrize("header", ["", "1.1.1.1, ", "x" * 65])
+def test_an_empty_or_too_long_last_address_is_no_source(tmp_path: Path, header: str) -> None:
     liff = build_liff(tmp_path, max_failed_verifies=12, max_failed_verifies_per_source=1)
     assert {liff.show(BAD_TOKEN, forwarded_for=header).status_code for _ in range(3)} == {401}
 
