@@ -23,6 +23,7 @@ folder that holds the file. Settings are not taken from environment variables.
 | `history_search_limit` | `20` | Most results one history search returns |
 | `redelivered_answer_window_seconds` | `600` | A mention that LINE redelivers (after a failed delivery) is answered only when it is at most this old; an older one is recorded but not answered. A message already in the record is never handled twice |
 | `required_member_user_id` | none | A LINE user id (yours, as shown in LINE Developers). When set, the bot leaves a group that is not in `allowed_group_ids` as soon as it hears from it, unless this user is a member; a group whose membership LINE cannot confirm is left too. Groups that pass are logged with their id, as before |
+| `allow_groups_with_required_member` | `false` | With `required_member_user_id` set: a group that user is in counts as allowed (recorded and answered) without being listed. The membership is asked again after an hour, and the bot leaves the group once that user is gone. Every message of such a group is recorded from the moment the bot joins, so tell the group first |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

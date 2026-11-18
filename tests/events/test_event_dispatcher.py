@@ -377,3 +377,62 @@ async def test_without_a_required_member_unknown_groups_are_kept(tmp_path: Path)
     dispatcher, line, *_ = setup(tmp_path)
     await dispatcher.handle(join_event())
     assert line.left_groups == []
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def auto_allowing(
+    tmp_path: Path, present: bool | None
+) -> tuple[EventDispatcher, FakeLine, GroupLog, ScriptedAnswerer, Clock]:
+    line = FakeLine(members={OPERATOR: present})
+    group_log = GroupLog(tmp_path)
+    answerer = ScriptedAnswerer()
+    clock = Clock()
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}),
+        line,
+        group_log,
+        answerer,
+        required_member_user_id=OPERATOR,
+        allow_groups_with_required_member=True,
+        clock=clock,
+    )
+    return dispatcher, line, group_log, answerer, clock
+
+
+async def test_a_group_the_member_is_in_is_recorded_and_answered(tmp_path: Path) -> None:
+    dispatcher, line, group_log, answerer, _ = auto_allowing(tmp_path, present=True)
+    await dispatcher.handle(join_event())
+    await dispatcher.handle(text_event(group_id=OTHER, mentions_bot=True))
+    assert line.left_groups == []
+    assert len(answerer.calls) == 1
+    assert [m.from_bot for m in group_log.list_recent(OTHER, 10)] == [False, True]
+
+
+async def test_a_group_the_member_is_not_in_is_left_in_auto_mode(tmp_path: Path) -> None:
+    dispatcher, line, _, answerer, _ = auto_allowing(tmp_path, present=False)
+    await dispatcher.handle(join_event())
+    await dispatcher.handle(text_event(group_id=OTHER, mentions_bot=True))
+    assert line.left_groups == [OTHER]
+    assert answerer.calls == []
+
+
+async def test_membership_is_asked_again_after_an_hour_and_the_bot_leaves(
+    tmp_path: Path,
+) -> None:
+    dispatcher, line, _, answerer, clock = auto_allowing(tmp_path, present=True)
+    await dispatcher.handle(text_event(group_id=OTHER, message_id="1"))
+    line.members[OPERATOR] = False
+    clock.now = 3599
+    await dispatcher.handle(text_event(group_id=OTHER, message_id="2"))
+    assert line.left_groups == []
+    clock.now = 3601
+    await dispatcher.handle(text_event(group_id=OTHER, message_id="3", mentions_bot=True))
+    assert line.left_groups == [OTHER]
+    assert answerer.calls == []
