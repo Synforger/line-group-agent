@@ -93,6 +93,8 @@ class NoticeTexts:
     error: str = ""
     rate_limit: str = ""
     intro: str = ""
+    help: str = ""
+    help_keywords: tuple[str, ...] = ()
 
 
 class EventDispatcher:
@@ -208,6 +210,9 @@ class EventDispatcher:
             if verdict is MentionVerdict.REFUSE_AND_TELL:
                 await self._tell_rate_limit(group_id, event)
             return
+        if self._asks_for_help(event):
+            await self._send_help(group_id, event)
+            return
         await self._answer_mention(group_id, event, record)
 
     async def _answer_mention(
@@ -253,6 +258,24 @@ class EventDispatcher:
                 Answer(self.texts.rate_limit),
                 quote_token=quote_token_of(event),
             )
+
+    def _asks_for_help(self, event: dict[str, Any]) -> bool:
+        """Whether the mention, with the mention text removed, is only a help keyword."""
+        if not self.texts.help or not self.texts.help_keywords:
+            return False
+        rest = _without_mentions(event).strip().strip("?？!！。、 ").casefold()
+        return any(rest == keyword.casefold() for keyword in self.texts.help_keywords)
+
+    async def _send_help(self, group_id: str, event: dict[str, Any]) -> None:
+        # The list is sent as written, without calling the model (no cost). It is not
+        # recorded as a turn, so the next mention still sees the messages around it.
+        logger.info("answer: sent the capability list")
+        await self._sender.send(
+            group_id,
+            event.get("replyToken"),
+            Answer(self.texts.help, record=False),
+            quote_token=quote_token_of(event),
+        )
 
     async def _introduce(self, group_id: str, event: dict[str, Any]) -> None:
         if not self.texts.intro:
@@ -360,3 +383,24 @@ def _bot_reply(sent: Answer) -> GroupMessage:
         text="\n".join(parts),
         from_bot=True,
     )
+
+
+def _without_mentions(event: dict[str, Any]) -> str:
+    """Return the message text with every mentioned span (by index and length) removed."""
+    message = event.get("message") or {}
+    text = message.get("text") or ""
+    mentionees = (message.get("mention") or {}).get("mentionees") or []
+    spans = sorted(
+        (m["index"], m["index"] + m["length"])
+        for m in mentionees
+        if isinstance(m, dict)
+        and isinstance(m.get("index"), int)
+        and isinstance(m.get("length"), int)
+    )
+    kept: list[str] = []
+    position = 0
+    for start, end in spans:
+        kept.append(text[position:start])
+        position = max(position, end)
+    kept.append(text[position:])
+    return "".join(kept)

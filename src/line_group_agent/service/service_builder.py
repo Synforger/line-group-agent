@@ -7,6 +7,7 @@ Called by the entry point.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import anthropic
 import httpx2
@@ -83,7 +84,13 @@ def build_app(config: AgentConfig) -> FastAPI:
         required_member_user_id=config.required_member_user_id,
         allow_groups_with_required_member=config.allow_groups_with_required_member,
         observer=watcher,
-        texts=NoticeTexts(error=config.error_text, rate_limit=config.rate_limit_text, intro=intro),
+        texts=NoticeTexts(
+            error=config.error_text,
+            rate_limit=config.rate_limit_text,
+            intro=intro,
+            help=_read_text_file(config.help_file, "help_file"),
+            help_keywords=config.help_keywords,
+        ),
         limiter=MentionLimiter(config.max_mentions_per_user_per_hour),
         wait_notice=WaitNotice(
             line,
@@ -126,3 +133,12 @@ def create_anthropic_client(api_key: str) -> anthropic.AsyncAnthropic:
         open_telemetry=False,
         http_client=http_client,
     )
+
+
+def _read_text_file(path: Path | None, key: str) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ConfigError(f"cannot read {key}: {error.strerror}") from error

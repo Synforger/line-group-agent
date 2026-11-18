@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from line_group_agent.agent.answerer import Answer, SlowNotice
 from line_group_agent.cards.card import Card
-from line_group_agent.events.event_dispatcher import EventDispatcher
+from line_group_agent.events.event_dispatcher import EventDispatcher, NoticeTexts
 from line_group_agent.line_api.line_client import ReplyResult
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 from line_group_agent.webhook.webhook_app import create_app
@@ -507,3 +507,47 @@ async def test_a_notice_that_took_no_turn_is_sent_but_not_recorded(tmp_path: Pat
     await dispatcher.handle(text_event(mentions_bot=True))
     assert line.replies == [("reply-token-1", "Sure.")]
     assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]
+
+
+def help_dispatcher(tmp_path: Path) -> tuple[EventDispatcher, FakeLine, GroupLog, ScriptedAnswerer]:
+    line = FakeLine(names={"U1": "Aki"})
+    group_log = GroupLog(tmp_path)
+    answerer = ScriptedAnswerer()
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}),
+        line,
+        group_log,
+        answerer,
+        texts=NoticeTexts(help="LIST", help_keywords=("できること", "help")),
+    )
+    return dispatcher, line, group_log, answerer
+
+
+def mention_text_event(text: str, message_id: str = "m1") -> dict[str, Any]:
+    event = text_event(text=text, message_id=message_id, mentions_bot=True)
+    event["message"]["mention"]["mentionees"][0].update({"index": 0, "length": 4})
+    return event
+
+
+@pytest.mark.parametrize(
+    "text", ["@bot できること", "@bot できること？", "@bot HELP", "@botできること!"]
+)
+async def test_a_help_keyword_gets_the_list_without_the_model(tmp_path: Path, text: str) -> None:
+    dispatcher, line, group_log, answerer = help_dispatcher(tmp_path)
+    await dispatcher.handle(mention_text_event(text))
+    assert answerer.calls == []
+    assert line.replies == [("reply-token-1", "LIST")]
+    assert [m.from_bot for m in group_log.list_recent(ALLOWED, 10)] == [False]
+
+
+async def test_a_longer_question_goes_to_the_model(tmp_path: Path) -> None:
+    dispatcher, line, _, answerer = help_dispatcher(tmp_path)
+    await dispatcher.handle(mention_text_event("@bot できることって旅行の予約も？"))
+    assert len(answerer.calls) == 1
+    assert line.replies == [("reply-token-1", "Sure.")]
+
+
+async def test_without_a_help_file_the_keyword_is_an_ordinary_mention(tmp_path: Path) -> None:
+    dispatcher, _, _, answerer = setup(tmp_path)
+    await dispatcher.handle(mention_text_event("@bot help"))
+    assert len(answerer.calls) == 1
