@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from line_group_agent.service.service_builder import ANTHROPIC_BASE_URL, create_anthropic_client
@@ -20,3 +22,22 @@ def test_the_api_client_takes_nothing_from_the_environment() -> None:
     assert str(client.base_url).rstrip("/") == ANTHROPIC_BASE_URL
     assert client.open_telemetry["traces"]["enabled"] is False
     assert client._client._mounts == {}
+
+
+def test_the_service_builds_its_parts_and_writes_the_tab_list(tmp_path: Path) -> None:
+    import json
+
+    from line_group_agent.service.service_builder import build_app
+    from tests.fakes import make_config
+
+    config = make_config(tmp_path)
+    config.persona_file.write_text("You are a helper.")
+    for secret_file in (
+        config.anthropic_api_key_file,
+        config.line_channel_secret_file,
+        config.line_channel_access_token_file,
+    ):
+        secret_file.write_text("secret\n")
+    build_app(config)
+    tabs = json.loads(config.tabs_file.read_text())
+    assert [tab["name"] for tab in tabs["tabs"]] == ["g-callowed"]

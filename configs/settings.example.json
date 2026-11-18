@@ -1,0 +1,7 @@
+{
+  "monthly_budget_usd": 100,
+  "context_window_tokens": 100000,
+  "rollover_percent": 60,
+  "idle_rollover_percent": 40,
+  "idle_hours": 6
+}

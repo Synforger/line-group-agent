@@ -30,6 +30,13 @@ DEFAULT_WEB_SEARCH_MAX_USES = 3
 DEFAULT_WEB_FETCH_TYPE = "web_fetch_20250910"
 DEFAULT_WEB_FETCH_MAX_USES = 2
 DEFAULT_WEB_FETCH_MAX_CONTENT_TOKENS = 8000
+DEFAULT_CACHE_TTL = "1h"
+CACHE_TTLS = ("5m", "1h")
+DEFAULT_SUMMARY_MAX_TOKENS = 2048
+DEFAULT_MAX_CATCH_UP_MESSAGES = 200
+DEFAULT_PATROL_INTERVAL_SECONDS = 600
+DEFAULT_SETTINGS_FILE_NAME = "settings.json"
+DEFAULT_TABS_FILE_NAME = "tabs.json"
 DEFAULT_CURRENCY = "JPY"
 DEFAULT_ESTIMATED_INPUT_TOKENS = 20000
 DEFAULT_EXHAUSTED_TEXT = "This month's budget is used up."
@@ -48,6 +55,8 @@ class PriceConfig:
     cache_write_per_mtok: float
     cache_read_per_mtok: float
     web_search_per_thousand: float
+    cache_write_1h_per_mtok: float | None
+    long_cache_write_1h_per_mtok: float | None
     long_prompt_threshold_tokens: int | None
     long_input_per_mtok: float | None
     long_output_per_mtok: float | None
@@ -94,14 +103,19 @@ class AgentConfig:
     allowed_group_ids: frozenset[str]
     persona_file: Path
     state_dir: Path
-    tab_name: str
+    settings_file: Path
+    tabs_file: Path
     anthropic_api_key_file: Path
     line_channel_secret_file: Path
     line_channel_access_token_file: Path
     model: str
     max_tokens: int
     effort: str
+    cache_ttl: str
     recent_message_count: int
+    max_catch_up_messages: int
+    summary_max_tokens: int
+    patrol_interval_seconds: int
     max_tool_rounds: int
     history_search_limit: int
     redelivered_answer_window_seconds: int
@@ -131,9 +145,10 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
     def path_of(key: str) -> Path:
         return base_dir / Path(_required(raw, key, str))
 
-    tab_name = _required(raw, "tab_name", str)
-    if not tab_name or not all(c.islower() or c.isdigit() or c == "-" for c in tab_name):
-        raise ConfigError("tab_name may hold only a-z, 0-9 and '-'")
+    cache_ttl = _optional(raw, "cache_ttl", str, DEFAULT_CACHE_TTL)
+    if cache_ttl not in CACHE_TTLS:
+        raise ConfigError("cache_ttl must be '5m' or '1h'")
+    state_dir = path_of("state_dir")
     group_ids = _optional(raw, "allowed_group_ids", list, [])
     if not all(isinstance(group_id, str) for group_id in group_ids):
         raise ConfigError("allowed_group_ids must be a list of strings")
@@ -143,16 +158,27 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         max_body_bytes=_optional(raw, "max_body_bytes", int, DEFAULT_MAX_BODY_BYTES),
         allowed_group_ids=frozenset(group_ids),
         persona_file=path_of("persona_file"),
-        state_dir=path_of("state_dir"),
-        tab_name=tab_name,
+        state_dir=state_dir,
+        settings_file=_optional_path(
+            raw, "settings_file", base_dir, base_dir / DEFAULT_SETTINGS_FILE_NAME
+        ),
+        tabs_file=_optional_path(raw, "tabs_file", base_dir, state_dir / DEFAULT_TABS_FILE_NAME),
         anthropic_api_key_file=path_of("anthropic_api_key_file"),
         line_channel_secret_file=path_of("line_channel_secret_file"),
         line_channel_access_token_file=path_of("line_channel_access_token_file"),
         model=_optional(raw, "model", str, DEFAULT_MODEL),
         max_tokens=_optional(raw, "max_tokens", int, DEFAULT_MAX_TOKENS),
         effort=_optional(raw, "effort", str, DEFAULT_EFFORT),
+        cache_ttl=cache_ttl,
         recent_message_count=_optional(
             raw, "recent_message_count", int, DEFAULT_RECENT_MESSAGE_COUNT
+        ),
+        max_catch_up_messages=_optional(
+            raw, "max_catch_up_messages", int, DEFAULT_MAX_CATCH_UP_MESSAGES
+        ),
+        summary_max_tokens=_optional(raw, "summary_max_tokens", int, DEFAULT_SUMMARY_MAX_TOKENS),
+        patrol_interval_seconds=_optional(
+            raw, "patrol_interval_seconds", int, DEFAULT_PATROL_INTERVAL_SECONDS
         ),
         max_tool_rounds=_optional(raw, "max_tool_rounds", int, DEFAULT_MAX_TOOL_ROUNDS),
         history_search_limit=_optional(
@@ -233,6 +259,10 @@ def _prices(section: dict[str, Any]) -> PriceConfig:
         cache_write_per_mtok=_required(section, "cache_write_per_mtok", float),
         cache_read_per_mtok=_required(section, "cache_read_per_mtok", float),
         web_search_per_thousand=_required(section, "web_search_per_thousand", float),
+        cache_write_1h_per_mtok=_optional(section, "cache_write_1h_per_mtok", float, None),
+        long_cache_write_1h_per_mtok=_optional(
+            section, "long_cache_write_1h_per_mtok", float, None
+        ),
         long_prompt_threshold_tokens=_optional(section, "long_prompt_threshold_tokens", int, None),
         long_input_per_mtok=_optional(section, "long_input_per_mtok", float, None),
         long_output_per_mtok=_optional(section, "long_output_per_mtok", float, None),
@@ -251,6 +281,11 @@ def _budget(section: dict[str, Any]) -> BudgetConfig:
         ),
         exhausted_text=_optional(section, "exhausted_text", str, DEFAULT_EXHAUSTED_TEXT),
     )
+
+
+def _optional_path(raw: dict[str, Any], key: str, base_dir: Path, default: Path) -> Path:
+    value = _optional(raw, key, str, None)
+    return default if value is None else base_dir / Path(value)
 
 
 def _required(section: dict[str, Any], key: str, kind: type) -> Any:

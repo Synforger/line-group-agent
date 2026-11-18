@@ -6,14 +6,13 @@ import anthropic
 import httpx
 import pytest
 
-from line_group_agent.agent.answerer import Answer, Answerer
+from line_group_agent.agent.answerer import Answer
 from line_group_agent.records.conversation_log import ConversationLog
-from line_group_agent.records.group_log import GroupLog, GroupMessage
-from line_group_agent.spend.spend_ledger import SpendLedger
-from tests.fakes import FakeAnthropic, answer, make_config, text_answer
+from line_group_agent.records.group_log import GroupMessage
+from tests.fakes import answer, text_answer
+from tests.world import GROUP, build_world
 
 pytestmark = pytest.mark.anyio
-GROUP = "Callowed"
 
 
 def mention(number: int = 99, text: str = "@bot where should we stay?") -> GroupMessage:
@@ -21,15 +20,9 @@ def mention(number: int = 99, text: str = "@bot where should we stay?") -> Group
 
 
 def build(tmp_path: Path, answers: list[dict[str, Any]], **overrides: Any) -> tuple[Any, ...]:
-    config = make_config(tmp_path, **overrides)
-    client = FakeAnthropic(answers)
-    group_log = GroupLog(config.state_dir)
-    conversation_log = ConversationLog(config.state_dir / "conversations" / "group-test.jsonl")
-    conversation_log.open()
-    ledger = SpendLedger(config.state_dir / "spend.json", config.budget)
-    ledger.open()
-    answerer = Answerer(config, client, "SYSTEM", group_log, conversation_log, ledger)
-    return answerer, client, group_log, conversation_log, ledger
+    world = build_world(tmp_path, answers, **overrides)
+    conversation = world.conversations.get(GROUP)
+    return world.answerer, world.client, world.group_log, conversation.log, world.books.overall
 
 
 def rows(log: ConversationLog) -> list[dict[str, Any]]:
@@ -52,10 +45,9 @@ async def test_the_request_carries_the_configured_model_tools_and_effort(tmp_pat
     request = client.messages.requests[0]
     assert request["model"] == "claude-haiku-5-5"
     assert request["max_tokens"] == 1024
-    assert request["system"] == [
-        {"type": "text", "text": "SYSTEM", "cache_control": {"type": "ephemeral"}}
-    ]
-    assert request["cache_control"] == {"type": "ephemeral"}
+    one_hour = {"type": "ephemeral", "ttl": "1h"}
+    assert request["system"] == [{"type": "text", "text": "SYSTEM", "cache_control": one_hour}]
+    assert request["cache_control"] == one_hour
     assert request["output_config"] == {"effort": "low"}
     tools = {tool["name"]: tool for tool in request["tools"]}
     assert tools["web_search"] == {
@@ -236,7 +228,7 @@ async def test_the_real_sdk_sends_the_request_this_answerer_builds(tmp_path: Pat
         return httpx2.Response(200, json=text_answer("<reply>Real path.</reply>"))
 
     answerer, *_ = build(tmp_path, [])
-    answerer.client = sdk.AsyncAnthropic(
+    answerer.caller.client = sdk.AsyncAnthropic(
         api_key="test-key",
         base_url="https://api.anthropic.com",
         open_telemetry=False,
@@ -244,6 +236,8 @@ async def test_the_real_sdk_sends_the_request_this_answerer_builds(tmp_path: Pat
     )
     assert (await answerer.answer(GROUP, mention())).text == "Real path."
     body = bodies[0]
+    assert body["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert body["model"] == "claude-haiku-5-5"
     assert body["output_config"] == {"effort": "low"}
     assert [tool["name"] for tool in body["tools"]] == [

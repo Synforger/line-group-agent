@@ -90,3 +90,17 @@ def test_rows_are_only_appended(tmp_path: Path) -> None:
     before = log.path.read_bytes()
     log.add_user("second")
     assert log.path.read_bytes().startswith(before)
+
+
+def test_a_groups_record_is_named_from_its_id_in_lower_case() -> None:
+    from line_group_agent.records.conversation_log import record_name_of
+
+    assert record_name_of("CAbC12xYz") == "g-cabc12xyz"
+
+
+def test_the_rows_can_be_read_back_and_adding_returns_the_row(tmp_path: Path) -> None:
+    log = ConversationLog(tmp_path / "c.jsonl")
+    row = log.add_user("hello")
+    log.add_assistant({"id": "msg_1", "role": "assistant", "content": []})
+    assert log.read_rows()[0] == row
+    assert [r["type"] for r in log.read_rows()] == ["user", "assistant"]

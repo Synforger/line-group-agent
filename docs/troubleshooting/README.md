@@ -24,6 +24,20 @@ This month's spend plus the most one answer may cost would pass
 or lower `max_tool_rounds`, `max_tokens` or `estimated_input_tokens_per_request`
 to make one answer's estimate smaller.
 
+## The bot replies "This month's budget is used up." for one group only
+
+Each group may spend the monthly limit divided by the number of groups. Check `spent` and
+`limit` in `groups/<groupId>/spend.json`, or the group's `spend` in the tab list. Raise
+`monthly_budget_usd` in the settings file (no restart needed), or note that adding a group
+lowers every group's share.
+
+## The settings file seems to be ignored
+
+`settings: cannot use settings.json (…); keeping the previous values` in the log means the
+file is not valid JSON or a value is of the wrong kind or out of range (percentages are
+above 0 and at most 100, `context_window_tokens` is a whole number above 0). The previous
+values stay until the file is fixed. A missing file means the defaults.
+
 ## Answers arrive as a separate message instead of a reply
 
 `reply: the reply token was refused; sending by push instead` means the answer

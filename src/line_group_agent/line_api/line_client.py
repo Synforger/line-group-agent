@@ -1,5 +1,5 @@
 """The calls this agent makes to the LINE Messaging API: reply, push, member name,
-membership check and leaving a group.
+group name, membership check and leaving a group.
 
 A reply or push carries the answer's text and, after it, one Flex Message holding the
 cards (LINE takes up to 5 messages per call; this sends at most 2). Called by the
@@ -111,6 +111,19 @@ class LineClient:
             return None
         name = response.json().get("displayName")
         return name if isinstance(name, str) else None
+
+    async def get_group_name(self, group_id: str) -> str | None:
+        """Return the group's name, or None when LINE does not give it."""
+        try:
+            response = await self._http.get(
+                f"/v2/bot/group/{group_id}/summary", headers=self._headers
+            )
+        except httpx.HTTPError:
+            return None
+        if response.status_code != HTTP_OK:
+            return None
+        name = response.json().get("groupName")
+        return name if isinstance(name, str) and name else None
 
     async def is_member(self, group_id: str, user_id: str) -> bool | None:
         """Return whether the user is in the group: True, False, or None when LINE

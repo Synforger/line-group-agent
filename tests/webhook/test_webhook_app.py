@@ -143,3 +143,20 @@ def test_a_signed_body_that_is_not_json_is_400(client: TestClient, sink: Recordi
     body = b"not json"
     assert post(client, body, sign(body)).status_code == 400
     assert sink.events == []
+
+
+def test_background_tasks_run_while_the_app_is_up() -> None:
+    class Task:
+        def __init__(self) -> None:
+            self.events: list[str] = []
+
+        def start(self) -> None:
+            self.events.append("start")
+
+        async def stop(self) -> None:
+            self.events.append("stop")
+
+    task = Task()
+    with TestClient(create_app(SECRET, LIMIT, RecordingSink(), background=[task])):
+        assert task.events == ["start"]
+    assert task.events == ["start", "stop"]

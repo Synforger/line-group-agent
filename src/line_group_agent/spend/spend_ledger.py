@@ -8,12 +8,12 @@ temporary file in the same folder, then a rename over the old one.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from line_group_agent._common.atomic_write import write_text_atomically
 from line_group_agent.config.agent_config import BudgetConfig
 
 SPENT_DECIMALS = 4
@@ -35,6 +35,7 @@ class SpendLedger:
     ) -> None:
         self.path = path
         self.budget = budget
+        self.limit = budget.monthly_limit
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._month = ""
         self._spent = 0.0
@@ -63,7 +64,24 @@ class SpendLedger:
 
     def can_afford(self, cost: float) -> bool:
         """Return whether spending `cost` more keeps this month within the limit."""
-        return self.spent + cost <= self.budget.monthly_limit
+        return self.spent + cost <= self.limit
+
+    def set_limit(self, limit: float) -> None:
+        """Change this month's limit (in the configured currency) and rewrite the file."""
+        if limit != self.limit:
+            self.limit = limit
+            self._save()
+
+    def figure(self) -> dict[str, Any]:
+        """Return `{month, spent, limit, currency, updated_at}`, as written to the file."""
+        self._roll_month()
+        return {
+            "month": self._month,
+            "spent": round(self._spent, SPENT_DECIMALS),
+            "limit": self.limit,
+            "currency": self.budget.currency,
+            "updated_at": self._clock().isoformat(timespec="seconds"),
+        }
 
     def add(self, cost: float) -> None:
         """Count `cost` (in the configured currency) and rewrite the file."""
@@ -82,21 +100,4 @@ class SpendLedger:
         return self._clock().strftime("%Y-%m")
 
     def _save(self) -> None:
-        figure = {
-            "month": self._month,
-            "spent": round(self._spent, SPENT_DECIMALS),
-            "limit": self.budget.monthly_limit,
-            "currency": self.budget.currency,
-            "updated_at": self._clock().isoformat(timespec="seconds"),
-        }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(
-            dir=self.path.parent, prefix=".spend-", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-                json.dump(figure, file)
-            os.replace(temporary, self.path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        write_text_atomically(self.path, json.dumps(self.figure()))

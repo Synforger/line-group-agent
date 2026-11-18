@@ -436,3 +436,51 @@ async def test_membership_is_asked_again_after_an_hour_and_the_bot_leaves(
     await dispatcher.handle(text_event(group_id=OTHER, message_id="3", mentions_bot=True))
     assert line.left_groups == [OTHER]
     assert answerer.calls == []
+
+
+class RecordingObserver:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def note_message(self, group_id: str, message: GroupMessage) -> None:
+        self.calls.append(("message", message.message_id))
+
+    async def after_answer(self, group_id: str) -> None:
+        self.calls.append(("answered", group_id))
+
+
+def observed(tmp_path: Path, **line_options: Any) -> tuple[EventDispatcher, RecordingObserver]:
+    observer = RecordingObserver()
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}),
+        FakeLine(names={"U1": "Aki"}, **line_options),
+        GroupLog(tmp_path),
+        ScriptedAnswerer(),
+        observer=observer,
+    )
+    return dispatcher, observer
+
+
+async def test_the_observer_hears_of_each_recorded_message_and_each_answer(tmp_path: Path) -> None:
+    dispatcher, observer = observed(tmp_path)
+    await dispatcher.handle(text_event(message_id="m1"))
+    await dispatcher.handle(text_event(message_id="m2", mentions_bot=True))
+    await dispatcher.handle(text_event(message_id="m2", mentions_bot=True))
+    assert observer.calls == [("message", "m1"), ("message", "m2"), ("answered", ALLOWED)]
+
+
+async def test_the_observer_hears_of_the_answer_even_when_sending_it_failed(
+    tmp_path: Path,
+) -> None:
+    dispatcher, observer = observed(tmp_path, reply_accepts=False, push_statuses=[500])
+    with pytest.raises(Exception, match="push"):
+        await dispatcher.handle(text_event(mentions_bot=True))
+    assert ("answered", ALLOWED) in observer.calls
+
+
+async def test_a_group_that_is_not_allowed_is_not_reported_to_the_observer(
+    tmp_path: Path,
+) -> None:
+    dispatcher, observer = observed(tmp_path)
+    await dispatcher.handle(text_event(OTHER))
+    assert observer.calls == []
