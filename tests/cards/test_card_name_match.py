@@ -10,7 +10,7 @@ from line_group_agent.cards.card_name_match import page_is_about
         ("ホテルグランヴィア広島（ほてる）", "ホテルグランヴィア広島 公式"),
         ("ホテルグランヴィア広島（ほてる）", "ほてる"),
         ("【人気】カフェ・ド・ロペ", "カフェ・ド・ロペ | 食べログ"),
-        ("【人気】カフェ・ド・ロペ", "人気"),
+        ("カフェ（かふぇろぺ）", "かふぇろぺ 公式"),
         ("ＧＩＯＮ　ＩＮＮ", "gion inn"),
         ("Gion  Inn", "the GION INN"),
     ],
@@ -44,3 +44,11 @@ def test_a_name_of_one_character_is_not_used() -> None:
 
 def test_a_one_character_name_does_not_stop_a_longer_bracketed_one_from_matching() -> None:
     assert page_is_about("駅（えきまえ）", "えきまえ食堂")
+
+
+def test_a_short_bracketed_tag_does_not_match_a_roundup() -> None:
+    assert not page_is_about("【人気】カフェ・ド・ロペ", "人気ランキング 広島のカフェ 20 選")
+
+
+def test_a_bracketed_reading_of_three_characters_or_more_still_matches() -> None:
+    assert page_is_about("UnRobi（アンロビ）", "アンロビ - 広島/カフェ | 食べログ")

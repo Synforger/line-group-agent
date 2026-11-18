@@ -15,9 +15,10 @@
   Typing its name as plain text is not a mention.
 - Someone may have passed `max_mentions_per_user_per_hour`: the log says `answer: a member
   passed the hourly limit; not answered`.
-- `answer: no reply to send` means the answer was empty and `error_text` is empty too. The
-  usual cause of an empty answer is a model that answered without `<reply>…</reply>`; make
-  the persona less wordy, or raise `max_tokens` if answers are cut off.
+- `answer: no reply to send` means the answer was empty and `error_text` is empty too, or the
+  bot chose to stay silent on a message that only held its name. A model that answers without
+  `<reply>…</reply>` is asked once to write it again inside the tags; when it still does not,
+  make the persona less wordy, or raise `max_tokens` if answers are cut off.
 - `answer: API refused the request (status 401)` means the API key file is wrong.
 
 ## The bot replies "This month's budget is used up."
@@ -50,7 +51,8 @@ quota. Fewer `max_uses` on the web tools make answers faster.
 
 ## The bot says "Something went wrong"
 
-That is `error_text`: the model gave no `<reply>…</reply>`, used up its tool rounds
+That is `error_text`: the model gave no `<reply>…</reply>` even after being asked once more
+(on a message that only held the bot's name it stays silent instead), used up its tool rounds
 (`max_tool_rounds`) or the agent hit an error; the log has one `answer:` line with the
 reason. When the Claude API itself fails, the bot stays silent and logs
 `model: API call failed` or `model: API refused the request (status …)`.
