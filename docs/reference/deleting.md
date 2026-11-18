@@ -64,10 +64,11 @@ Things to know:
 
 Once a day (at the first patrol after a day has passed) the agent deletes the messages of
 the group record and the rows of the conversation record that are older than
-`retention_days` (30 by default). Two things are kept:
+`retention_days` (30 by default). Three things are kept:
 
 - the running conversation: its rows, and the group messages written since it began, are
   not deleted however old they are; they go with the conversation after it is rolled over
+- messages [imported](importing-history.md) from an old chat history, which are old by nature
 - the summaries in `groups/<groupId>/journal/`, which are never deleted by age (one is
   only rewritten to take out a deleted message)
 

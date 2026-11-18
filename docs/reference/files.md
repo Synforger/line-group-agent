@@ -16,6 +16,8 @@ replaced whole:
 - `user_id` is `null` when LINE does not give it; `display_name` is `null` when the
   member profile cannot be read
 - A [location](group-tools.md#locations) is the text `[位置] name address (latitude, longitude)`.
+- A message [imported](importing-history.md) from an old chat history has `"imported": true`
+  and no `user_id`; age does not delete it.
 - Stickers, videos and other kinds of messages are not recorded. A [photo](group-tools.md#photos)
   is the text `[写真]` with `"image_file": "<message id>.jpg"` naming its file (the field is
   missing from every other row, and for a photo that could not be kept)

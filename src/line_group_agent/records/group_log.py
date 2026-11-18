@@ -4,14 +4,15 @@ a later mention sees the conversation the bot itself took part in.
 
 Written by the event dispatcher, read by the answerer (recent messages and history
 search). Lives at `<state_dir>/groups/<groupId>/messages.jsonl`. Rows are appended; the
-file is rewritten whole only to delete messages (on request or by age); the photo files of
-deleted messages go with them.
+file is rewritten whole only to delete messages (on request or by age) or to put in
+messages imported from an old chat history; the photo files of deleted messages go with them.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +31,8 @@ IMAGES_FOLDER_NAME = "images"
 @dataclass(frozen=True)
 class GroupMessage:
     """One message said in the group (by a member, or by the bot when `from_bot`). A photo
-    is the text `[写真]` with the name of its file in `image_file`."""
+    is the text `[写真]` with the name of its file in `image_file`. A message put in from an
+    old chat history has `imported` set; age never deletes it."""
 
     time: str
     message_id: str
@@ -39,6 +41,7 @@ class GroupMessage:
     text: str
     from_bot: bool = False
     image_file: str | None = None
+    imported: bool = False
 
 
 class GroupLog:
@@ -49,10 +52,27 @@ class GroupLog:
 
     def add(self, group_id: str, message: GroupMessage) -> None:
         """Append one message to the group's record."""
-        row = asdict(message)
-        if message.image_file is None:
-            del row["image_file"]
-        append_json_line(self._path(group_id), row)
+        append_json_line(self._path(group_id), _row_of(message))
+
+    def add_imported(self, group_id: str, messages: Sequence[GroupMessage]) -> int:
+        """Put messages from an old chat history into the record in time order, leaving out
+        any the record already holds (the same minute, name and text), and return how many
+        were put in. The file is replaced whole, so no answer may be running."""
+        path = self._path(group_id)
+        rows = read_json_lines(path)
+        known = Counter(_same_message_key(row) for row in rows)
+        new: list[dict[str, Any]] = []
+        for message in sorted(
+            messages, key=lambda m: _moment_of(m.time) or datetime.min.astimezone()
+        ):
+            key = _same_message_key(_row_of(message))
+            if known[key] > 0:
+                known[key] -= 1
+            else:
+                new.append(_row_of(message))
+        if new:
+            replace_json_lines(path, _merged(rows, new))
+        return len(new)
 
     def has_message(self, group_id: str, message_id: str) -> bool:
         """Return whether a message with this id is already in the group's record."""
@@ -156,7 +176,7 @@ class GroupLog:
 
         def is_expired(row: dict[str, Any]) -> bool:
             moment = _moment_of(row.get("time"))
-            if moment is None or moment >= cutoff:
+            if row.get("imported") is True or moment is None or moment >= cutoff:
                 return False
             return keep_since is None or moment < keep_since
 
@@ -205,7 +225,52 @@ def _message_of(row: dict[str, Any]) -> GroupMessage | None:
         text=text,
         from_bot=row.get("from_bot") is True,
         image_file=row["image_file"] if isinstance(row.get("image_file"), str) else None,
+        imported=row.get("imported") is True,
     )
+
+
+def _sort_key(message: GroupMessage) -> float:
+    moment = _moment_of(message.time)
+    return moment.timestamp() if moment is not None else float("inf")
+
+
+def _row_of(message: GroupMessage) -> dict[str, Any]:
+    row = asdict(message)
+    if message.image_file is None:
+        del row["image_file"]
+    if not message.imported:
+        del row["imported"]
+    return row
+
+
+def _same_message_key(row: dict[str, Any]) -> tuple[str, str | None, str]:
+    """What makes two rows the same message: the minute, the name and the text (an imported
+    history has no seconds and no user ids)."""
+    moment = _moment_of(row.get("time"))
+    minute = moment.astimezone().strftime("%Y-%m-%d %H:%M") if moment is not None else ""
+    return minute, row.get("display_name"), str(row.get("text", ""))
+
+
+def _merged(rows: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return `rows` with `new` (oldest first) put in before the first row that is later than
+    each of them. The order of `rows` is not changed; a row whose time cannot be read counts as
+    the one before it."""
+    merged: list[dict[str, Any]] = []
+    index = 0
+    last: datetime | None = None
+    for row in rows:
+        last = _moment_of(row.get("time")) or last
+        while index < len(new) and last is not None and _is_before(new[index], last):
+            merged.append(new[index])
+            index += 1
+        merged.append(row)
+    merged.extend(new[index:])
+    return merged
+
+
+def _is_before(row: dict[str, Any], moment: datetime) -> bool:
+    found = _moment_of(row.get("time"))
+    return found is not None and found < moment
 
 
 def _moment_of(value: Any) -> datetime | None:
