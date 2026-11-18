@@ -1,5 +1,6 @@
 from typing import Any
 
+from line_group_agent._common.one_line import cut_with_ellipsis
 from line_group_agent.cards.card import (
     MAX_CARD_COUNT,
     PRICE_MAX_CHARS,
@@ -8,7 +9,7 @@ from line_group_agent.cards.card import (
     URL_MAX_CHARS,
     Card,
 )
-from line_group_agent.cards.card_input import cut_with_ellipsis, parse_cards
+from line_group_agent.cards.card_input import parse_cards
 
 
 def card_input(**overrides: Any) -> dict[str, Any]:

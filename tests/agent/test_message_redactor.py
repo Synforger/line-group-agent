@@ -97,3 +97,45 @@ def test_a_deleted_members_message_is_not_searched_for_in_answers() -> None:
 def test_a_row_without_a_message_is_returned_as_it_is() -> None:
     row = {"type": "user", "uuid": "u", "timestamp": "t", "message": "odd"}
     assert redact_row(row, [SECRET]) == row
+
+
+def test_a_bot_reply_that_carried_a_poll_and_a_place_is_still_found() -> None:
+    reply = GroupMessage(
+        "t",
+        "bot-3",
+        None,
+        None,
+        "Vote below.\n[投票] p1 Where? 1. Kyoto / 2. Osaka\n[位置] Gion Inn Kyoto (35.0, 135.0)",
+        True,
+    )
+    blocks = [{"type": "text", "text": "<reply>Vote below.</reply>"}]
+    changed = redact_row(assistant_row(blocks), [reply])["message"]["content"]
+    assert changed == [{"type": "text", "text": "<reply>[deleted]</reply>"}]
+
+
+def test_a_reply_that_only_starts_the_same_way_is_not_taken_for_the_deleted_one() -> None:
+    reply = GroupMessage("t", "bot-4", None, None, "Vote below.\nand then more words", True)
+    blocks = [{"type": "text", "text": "<reply>Vote below.</reply>"}]
+    assert redact_row(assistant_row(blocks), [reply])["message"]["content"] == blocks
+
+
+def test_the_caption_and_image_of_a_deleted_photo_become_one_deleted_text() -> None:
+    from line_group_agent.agent.prompt import photo_caption
+
+    photo = GroupMessage("t", "m7", "U1", "Aki", "[写真]", image_file="m7.jpg")
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "A"}}
+    other = GroupMessage("t2", "m8", "U1", "Aki", "[写真]", image_file="m8.jpg")
+    content = [
+        {"type": "text", "text": "envelope"},
+        {"type": "text", "text": photo_caption(photo)},
+        image,
+        {"type": "text", "text": photo_caption(other)},
+        image,
+    ]
+    changed = redact_row(user_row(content), [photo])["message"]["content"]
+    assert changed == [
+        {"type": "text", "text": "envelope"},
+        {"type": "text", "text": "[deleted]"},
+        {"type": "text", "text": photo_caption(other)},
+        image,
+    ]

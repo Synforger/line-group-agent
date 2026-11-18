@@ -5,8 +5,8 @@ Called by the answerer when the model runs `delete_messages` and by the event
 dispatcher when a member unsends a message. The running conversation is rewritten
 without the messages (and without its thinking blocks), and is marked to roll over at
 once, so that the next conversation opens from a summary that is told not to repeat
-them. Summaries that already exist are not touched. A message cannot be removed from
-the LINE chat itself.
+them. The texts of what was deleted are handed to the summary scrubber, which takes them out of
+the summaries that already exist. A message cannot be removed from the LINE chat itself.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from line_group_agent.agent.message_redactor import redact_row
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 
@@ -24,11 +25,17 @@ class MessageDeleter:
     """Removes messages from the group's record and the conversation."""
 
     def __init__(
-        self, group_log: GroupLog, conversations: GroupConversations, *, search_limit: int
+        self,
+        group_log: GroupLog,
+        conversations: GroupConversations,
+        *,
+        search_limit: int,
+        scrubber: SummaryScrubber | None = None,
     ) -> None:
         self.group_log = group_log
         self.conversations = conversations
         self.search_limit = search_limit
+        self.scrubber = scrubber
 
     def delete_matching(
         self,
@@ -68,6 +75,8 @@ class MessageDeleter:
             return 0
         conversation = self.conversations.get(group_id)
         conversation.rewrite_rows(lambda row: redact_row(row, removed))
+        if self.scrubber is not None:
+            self.scrubber.note_deleted(group_id, removed)
         if conversation.messages:
             conversation.must_roll_over = True
         logger.info("delete: %d message(s) deleted from the records", len(removed))

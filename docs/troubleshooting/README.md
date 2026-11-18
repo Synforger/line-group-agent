@@ -61,6 +61,31 @@ That is intended: the answer needed web work, so the wait text took the reply to
 answer is a push message. Raise `wait_min_push_left` (or empty `wait_text`) to keep pushes
 for answers only.
 
+## Pressing a poll button does nothing
+
+The press arrives as a postback event. The log tells which case it is:
+
+- `poll: a press came without a user id; not counted`: LINE did not say who pressed, and the
+  agent cannot count a vote it cannot attribute. Votes work only when LINE puts the member's
+  user id in the event
+- `poll: a vote was ignored`: the poll is closed, or its card is older than the polls kept (the
+  newest 50)
+- No line at all: the group is not in `allowed_group_ids`, or the webhook is not receiving
+  postback events
+
+## The bot does not see a photo
+
+- `image: LINE did not give the content of a photo`: LINE gives a message's content for a
+  limited time and only to the account the message was sent to; check the channel access token
+- `image: a photo could not be used`: only JPEG, PNG, GIF and WEBP files are read
+- `max_images_per_turn` is `0` (photos are then not kept at all), or the photo was sent before
+  the bot's last turn (only the newest ones since then are shown)
+
+## The quick reply buttons do not call the bot
+
+A tap sends `<first call name>、<option>`; set `call_names` so the message starts with a name
+the bot answers to. Without one, a tap sends the option alone.
+
 ## The agent does not start
 
 It prints the reason and exits with status 2:

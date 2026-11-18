@@ -197,3 +197,34 @@ def test_the_counts_cannot_be_below_their_minimum(tmp_path: Path, key: str) -> N
     if key != "wait_min_push_left":
         with pytest.raises(ConfigError, match=key):
             make_config(tmp_path, **{key: 0})
+
+
+def test_the_itinerary_keywords_default_to_one_word_and_can_be_listed(tmp_path: Path) -> None:
+    assert make_config(tmp_path).itinerary_keywords == ("itinerary",)
+    config = make_config(tmp_path, itinerary_keywords=[" しおり ", "plan"])
+    assert config.itinerary_keywords == ("しおり", "plan")
+
+
+def test_an_itinerary_keyword_must_be_a_non_empty_string(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="itinerary_keywords"):
+        make_config(tmp_path, itinerary_keywords=["ok", ""])
+
+
+def test_the_photo_settings_have_defaults_and_limits(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    assert (config.max_images_per_turn, config.max_image_edge_pixels) == (3, 1568)
+    config = make_config(tmp_path, max_images_per_turn=0, max_image_edge_pixels=64)
+    assert (config.max_images_per_turn, config.max_image_edge_pixels) == (0, 64)
+
+
+@pytest.mark.parametrize("overrides", [{"max_images_per_turn": -1}, {"max_image_edge_pixels": 63}])
+def test_photo_settings_below_their_minimum_are_refused(
+    tmp_path: Path, overrides: dict[str, int]
+) -> None:
+    with pytest.raises(ConfigError, match="at least"):
+        make_config(tmp_path, **overrides)
+
+
+def test_the_welcome_text_is_empty_by_default_and_trimmed(tmp_path: Path) -> None:
+    assert make_config(tmp_path).welcome_text == ""
+    assert make_config(tmp_path, welcome_text="  Welcome!\n").welcome_text == "Welcome!"

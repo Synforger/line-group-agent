@@ -1,6 +1,6 @@
 """Answer one mention inside the group's running conversation: add the turn, call the
-Messages API, run the history-search, show-cards and delete-messages tools, and return
-the reply text and the cards to send.
+Messages API, run the history-search, show-cards, delete-messages and group tools, and
+return the reply text, the cards, the extra messages and the quick replies to send.
 
 Called by the event dispatcher for each message that mentions the bot. The
 conversation record, the context amount and the money counters are kept here and in
@@ -14,6 +14,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from line_group_agent.agent.client_tool import ToolOutcome, ToolTurn
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import (
@@ -24,14 +26,19 @@ from line_group_agent.agent.prompt import (
     SEARCH_HISTORY_TOOL_NAME,
     SHOW_CARDS_TOOL_NAME,
     build_envelope,
+    build_user_content,
     extract_reply,
     format_search_results,
 )
 from line_group_agent.agent.slow_answer import is_slow_ahead
 from line_group_agent.agent.tool_pairing import pair_tool_calls
+from line_group_agent.agent.turn_output import TurnOutput
 from line_group_agent.cards.card import Card
 from line_group_agent.cards.card_input import parse_cards
 from line_group_agent.config.agent_config import AgentConfig
+from line_group_agent.line_api.outgoing_extra import OutgoingExtra
+from line_group_agent.line_api.quick_reply import QuickReplyItem
+from line_group_agent.media.photo_picker import PhotoPicker
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -45,14 +52,18 @@ from line_group_agent.spend.spend_books import SpendBooks
 logger = logging.getLogger(__name__)
 
 SlowNotice = Callable[[], Awaitable[None]]
+TOOL_FAILED_RESULT = "The tool failed and did nothing. Tell the group briefly, or try again."
 
 
 @dataclass(frozen=True)
 class Answer:
-    """What to send for one mention: a reply text, cards, both or neither."""
+    """What to send for one mention: a reply text, cards, extra messages (a poll card, a
+    location) and quick reply buttons, or none of them."""
 
     text: str | None
     cards: list[Card] = field(default_factory=list)
+    extras: list[OutgoingExtra] = field(default_factory=list)
+    quick_replies: list[QuickReplyItem] = field(default_factory=list)
     # False for a notice sent without taking a turn (the budget text): recording it as
     # the bot's reply would move the "since your last turn" window past messages the
     # model has not seen yet.
@@ -70,6 +81,9 @@ class Answerer:
         conversations: GroupConversations,
         books: SpendBooks,
         deleter: MessageDeleter,
+        *,
+        client_tools: ClientTools | None = None,
+        photos: PhotoPicker | None = None,
     ) -> None:
         self.config = config
         self.caller = caller
@@ -77,6 +91,8 @@ class Answerer:
         self.conversations = conversations
         self.books = books
         self.deleter = deleter
+        self.client_tools = client_tools or ClientTools()
+        self.photos = photos
 
     async def answer(
         self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
@@ -105,13 +121,14 @@ class Answerer:
             logger.info("answer: budget left is below one mention; not calling the API")
             return Answer(budget.exhausted_text, record=False)
 
-        envelope = self._envelope(conversation, mention)
-        messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": envelope}])
-        conversation.add_user(envelope)
+        turn = self._user_turn(conversation, mention)
+        messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": turn}])
+        conversation.add_user(turn)
         conversation.last_turn_message_id = mention.message_id
 
         texts: list[str] = []
         cards: list[Card] = []
+        output = TurnOutput()
         is_api_down = is_over_budget = False
         for request_index in range(self.config.max_tool_rounds + 1):
             if request_index > 0 and not self._can_afford_request(conversation):
@@ -139,18 +156,18 @@ class Answerer:
             if request_index == self.config.max_tool_rounds:
                 logger.info("answer: tool rounds used up (%d)", self.config.max_tool_rounds)
                 break
-            results, shown = self._run_tools(conversation, mention, content)
+            results, shown = self._run_tools(conversation, mention, content, output)
             if shown is not None:
                 cards = shown
             messages.append({"role": "user", "content": results})
             conversation.add_user(results)
 
         reply = extract_reply("\n".join(texts))
-        if reply is None and not cards:
+        if reply is None and not cards and not output.extras:
             return self._answer_without_reply(
                 is_api_down=is_api_down, is_over_budget=is_over_budget
             )
-        return Answer(reply, cards)
+        return Answer(reply, cards, extras=output.extras, quick_replies=output.quick_replies)
 
     def _answer_without_reply(self, *, is_api_down: bool, is_over_budget: bool) -> Answer:
         if is_api_down:
@@ -159,20 +176,37 @@ class Answerer:
             return Answer(self.config.budget.exhausted_text)
         return Answer(self.config.error_text or None)
 
-    def _envelope(self, conversation: GroupConversation, mention: GroupMessage) -> str:
+    def _user_turn(
+        self, conversation: GroupConversation, mention: GroupMessage
+    ) -> str | list[dict[str, Any]]:
+        """Return the user turn for this mention: the envelope, with the photos sent since
+        the bot's last turn attached when photos are read."""
         group_id = conversation.group_id
+        since = self._since_last_turn(conversation, mention)
         if conversation.starts_new_generation:
             recent = self.group_log.list_recent(
                 group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
             )
-            return build_envelope(recent, mention, summary=conversation.pending_summary)
-        since = self.group_log.list_since_turn(
-            group_id,
+            envelope = build_envelope(recent, mention, summary=conversation.pending_summary)
+        else:
+            envelope = build_envelope(since, mention)
+        if self.photos is None:
+            return envelope
+        return build_user_content(envelope, self.photos.pick(group_id, since))
+
+    def _since_last_turn(
+        self, conversation: GroupConversation, mention: GroupMessage
+    ) -> list[GroupMessage]:
+        # A turn that opens a generation shows the recent messages instead, and needs this
+        # list only to find the photos.
+        if conversation.starts_new_generation and self.photos is None:
+            return []
+        return self.group_log.list_since_turn(
+            conversation.group_id,
             self.config.max_catch_up_messages,
             after_message_id=conversation.last_turn_message_id,
             exclude_message_id=mention.message_id,
         )
-        return build_envelope(since, mention)
 
     def _can_afford_request(self, conversation: GroupConversation) -> bool:
         estimate = request_estimate_usd(self.config, context_tokens=conversation.context_tokens)
@@ -181,10 +215,15 @@ class Answerer:
         )
 
     def _run_tools(
-        self, conversation: GroupConversation, mention: GroupMessage, content: list[dict[str, Any]]
+        self,
+        conversation: GroupConversation,
+        mention: GroupMessage,
+        content: list[dict[str, Any]],
+        output: TurnOutput,
     ) -> tuple[list[dict[str, Any]], list[Card] | None]:
         """Run the client tools of one turn. Also return the cards of the last
-        `show_cards` call that held a usable card, or None when there was none."""
+        `show_cards` call that held a usable card, or None when there was none. The group
+        tools add their messages and quick replies to `output`."""
         results: list[dict[str, Any]] = []
         shown: list[Card] | None = None
         for block in content:
@@ -198,8 +237,23 @@ class Answerer:
                 else:
                     results.append(_tool_result(block, NO_VALID_CARDS_RESULT, is_error=True))
                 continue
+            name = block.get("name")
+            if self.client_tools.has(name):
+                turn = ToolTurn(conversation.group_id, mention, output)
+                outcome = self._run_client_tool(str(name), block.get("input"), turn)
+                results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
+                continue
             results.append(self._run_query_tool(conversation, mention, block))
         return results, shown
+
+    def _run_client_tool(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        """Run a group tool; a tool that fails (a file that cannot be written) gives the model
+        an error result instead of ending the whole answer."""
+        try:
+            return self.client_tools.run(name, tool_input, turn)
+        except Exception as error:
+            logger.error("answer: tool %s failed (%s)", name, type(error).__name__)
+            return ToolOutcome(TOOL_FAILED_RESULT, is_error=True)
 
     def _run_query_tool(
         self, conversation: GroupConversation, mention: GroupMessage, block: dict[str, Any]

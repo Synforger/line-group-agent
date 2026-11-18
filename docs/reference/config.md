@@ -32,8 +32,10 @@ folder that holds the file. Settings are not taken from environment variables.
 | `allow_groups_with_required_member` | `false` | With `required_member_user_id` set: a group that user is in counts as allowed (recorded and answered) without being listed. The membership is asked again after an hour, and the bot leaves the group once that user is gone. Every message of such a group is recorded from the moment the bot joins, so tell the group first |
 | `alert_user_id` | `required_member_user_id` | A LINE user id that gets a short push message when the agent cannot do its job; see [Alerts](notices-and-limits.md#alerts). Without it (and without `required_member_user_id`) nothing is sent |
 | `intro_file` | none | Text file whose content is sent when the bot joins a group it may answer in; see [The introduction](notices-and-limits.md#the-introduction). Unset: no introduction. A file that cannot be read stops the agent at start |
+| `welcome_text` | none | Text sent when a new member joins a group the bot may answer in; see [The welcome](notices-and-limits.md#the-welcome). Empty or unset: no welcome. It is recorded as one of the bot's own messages |
 | `help_file` | none | Text file sent as is when a mention holds nothing but one of `help_keywords` (the mention itself removed, surrounding punctuation ignored). The model is not called, so it costs nothing, and the list is not recorded as a turn. Unset: the keywords are answered like any mention. A file that cannot be read stops the agent at start |
 | `help_keywords` | `["help"]` | The words that ask for `help_file`, compared whole and case-insensitively |
+| `itinerary_keywords` | `["itinerary"]` | The words that ask for the saved [trip itinerary](group-tools.md#trip-itinerary): a mention that holds only one of them (compared whole and case-insensitively, the mention, a call name and punctuation ignored) gets the itinerary as it is, without the model. With no itinerary saved, the model answers |
 | `call_names` | `[]` | Names that call the bot without a LINE mention: a text message that starts or ends with one of them (any case, spaces and punctuation such as `、` `!` `?` around it ignored) is answered like a mention. A Latin name must not run on into more letters. Empty: only mentions call the bot |
 | `error_text` | `Something went wrong, so I could not answer. Please try again in a bit.` | Sent when no answer could be made for a reason other than the budget or the API failing. Empty: nothing is sent |
 | `wait_text` | `Looking that up, one moment.` | Sent first when the answer will take a while, and the answer follows as a push message. Empty: never sent |
@@ -41,6 +43,8 @@ folder that holds the file. Settings are not taken from environment variables.
 | `max_mentions_per_user_per_hour` | `20` | Most mentions of the bot one person gets answered in an hour (1 or more) |
 | `rate_limit_text` | `You have asked a lot in the last hour. Please try again a little later.` | Sent the first time a person passes the limit. Empty: nothing is sent |
 | `retention_days` | `30` | Group messages and conversation rows older than this are deleted once a day, except the running conversation's; the summaries are kept. See [Deleting messages](deleting.md) (1 or more) |
+| `max_images_per_turn` | `3` | Most photos given to the model at one mention (the newest ones the group sent since the bot's last turn). `0` turns photos off: they are neither kept nor recorded. See [Photos](group-tools.md#photos) |
+| `max_image_edge_pixels` | `1568` | A photo whose long side is longer is scaled down to this before it is kept (64 or more) |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

@@ -26,6 +26,7 @@ DEFAULT_MAX_TOOL_ROUNDS = 4
 DEFAULT_HISTORY_SEARCH_LIMIT = 20
 DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 DEFAULT_HELP_KEYWORDS = ("help",)
+DEFAULT_ITINERARY_KEYWORDS = ("itinerary",)
 DEFAULT_WEB_SEARCH_TYPE = "web_search_20250305"
 DEFAULT_WEB_SEARCH_MAX_USES = 3
 DEFAULT_WEB_FETCH_TYPE = "web_fetch_20250910"
@@ -47,6 +48,9 @@ DEFAULT_WAIT_MIN_PUSH_LEFT = 20
 DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR = 20
 DEFAULT_RATE_LIMIT_TEXT = "You have asked a lot in the last hour. Please try again a little later."
 DEFAULT_RETENTION_DAYS = 30
+DEFAULT_MAX_IMAGES_PER_TURN = 3
+DEFAULT_IMAGE_EDGE_PIXELS = 1568
+MIN_IMAGE_EDGE_PIXELS = 64
 
 
 class ConfigError(ValueError):
@@ -132,13 +136,17 @@ class AgentConfig:
     intro_file: Path | None
     help_file: Path | None
     help_keywords: tuple[str, ...]
+    itinerary_keywords: tuple[str, ...]
     call_names: tuple[str, ...]
+    welcome_text: str
     error_text: str
     wait_text: str
     wait_min_push_left: int
     max_mentions_per_user_per_hour: int
     rate_limit_text: str
     retention_days: int
+    max_images_per_turn: int
+    max_image_edge_pixels: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -216,7 +224,9 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         intro_file=_optional_path(raw, "intro_file", base_dir, None),
         help_file=_optional_path(raw, "help_file", base_dir, None),
         help_keywords=_string_tuple(raw, "help_keywords", DEFAULT_HELP_KEYWORDS),
+        itinerary_keywords=_string_tuple(raw, "itinerary_keywords", DEFAULT_ITINERARY_KEYWORDS),
         call_names=_string_tuple(raw, "call_names", ()),
+        welcome_text=_optional(raw, "welcome_text", str, "").strip(),
         error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
         wait_min_push_left=_at_least(
@@ -227,6 +237,15 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         ),
         rate_limit_text=_optional(raw, "rate_limit_text", str, DEFAULT_RATE_LIMIT_TEXT),
         retention_days=_at_least(raw, "retention_days", DEFAULT_RETENTION_DAYS),
+        max_images_per_turn=_at_least(
+            raw, "max_images_per_turn", DEFAULT_MAX_IMAGES_PER_TURN, minimum=0
+        ),
+        max_image_edge_pixels=_at_least(
+            raw,
+            "max_image_edge_pixels",
+            DEFAULT_IMAGE_EDGE_PIXELS,
+            minimum=MIN_IMAGE_EDGE_PIXELS,
+        ),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),

@@ -15,11 +15,22 @@ replaced whole:
 - `time` is the event's time in the machine's time zone
 - `user_id` is `null` when LINE does not give it; `display_name` is `null` when the
   member profile cannot be read
-- Messages of other kinds (stickers, photos) are not recorded
+- A [location](group-tools.md#locations) is the text `[位置] name address (latitude, longitude)`.
+- A message [imported](importing-history.md) from an old chat history has `"imported": true`
+  and no `user_id`; age does not delete it.
+- Stickers, videos and other kinds of messages are not recorded. A [photo](group-tools.md#photos)
+  is the text `[写真]` with `"image_file": "<message id>.jpg"` naming its file (the field is
+  missing from every other row, and for a photo that could not be kept)
 - A reply the bot sent is recorded too, with `"from_bot": true` and no user. When the
-  reply carried [cards](cards.md), a last line names them, e.g.
+  reply carried a [poll](group-tools.md#polls) or a location, a line for each follows it (`[投票] p1 …`,
+  `[位置] …`). When it carried [cards](cards.md), a line names them, e.g.
   `[カード] 1. Gion Inn (¥2,980〜) https://… / 2. River Hotel https://…`, so a later
   mention such as "the second one" can be followed
+
+## `groups/<groupId>/images/`
+
+The [photos](group-tools.md#photos) of the group, one file per photo named after its message
+(`<message id>.jpg`, `.png`, `.gif` or `.webp`). A file is removed when its message is.
 
 ## `conversations/g-<groupId>.jsonl`
 
@@ -32,8 +43,9 @@ one row per line, appended only and written one row per write:
 {"type": "assistant", "uuid": "…", "timestamp": "2026-11-18T03:00:04.000Z", "message": {"id": "msg_…", "role": "assistant", "content": [ … ], "usage": { … }}}
 ```
 
-- A `user` row's `content` is the text sent (it never starts with an XML tag) or
-  the `tool_result` blocks of a history search
+- A `user` row's `content` is the text sent (it never starts with an XML tag), a list of
+  blocks (the text, then a caption and an `image` block for each photo given with the turn),
+  or the `tool_result` blocks of a history search
 - An `assistant` row's `message` is the API's answer as it came, with its `id`. The
   conversation is rebuilt from these rows at start, so they are edited only to
   [delete a message](deleting.md)
@@ -50,7 +62,26 @@ one row per line, appended only and written one row per write:
 The summary that closed conversation number `N` of the group, written when it was rolled
 over. The file holds the summary text only. The next conversation opens with it. These
 files are never deleted by the agent, and the highest `N` tells which generation a
-conversation is in.
+conversation is in. A file is rewritten (its modification time kept) only to take out the
+content of a message that was [deleted](deleting.md#summaries-written-before-the-deletion).
+
+## `groups/<groupId>/polls.json`
+
+The group's [polls](group-tools.md#polls), replaced whole at each change (a new poll, a vote, a
+close). The newest 50 polls are kept:
+
+```json
+{"last_number": 2, "polls": [{"id": "p2", "kind": "choice", "question": "Where?", "multiple": false, "is_closed": false, "created_at": "2026-11-18T12:00:00+09:00", "options": [{"label": "Kyoto", "voters": [{"user_id": "U0123…", "name": "Aki"}]}, {"label": "Osaka", "voters": []}]}]}
+```
+
+## `groups/<groupId>/itinerary.json`
+
+The group's [trip itinerary](group-tools.md#trip-itinerary), replaced whole at each update.
+`versions` holds the texts it replaced, newest first, at most five:
+
+```json
+{"text": "1日目 (11/23)\n…", "saved_at": "2026-11-18T12:00:00+09:00", "versions": [{"text": "…", "saved_at": "…"}]}
+```
 
 ## `groups/<groupId>/spend.json`
 

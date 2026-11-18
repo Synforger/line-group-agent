@@ -230,3 +230,20 @@ def test_with_a_summary_waiting_every_old_row_may_go(tmp_path: Path) -> None:
     conversation.set_pending_summary("s", datetime(2026, 11, 18))
     assert conversation.drop_rows_before(datetime.fromisoformat("2026-11-01T00:00:00+00:00")) == 2
     assert conversation.log.read_rows() == []
+
+
+def test_a_turn_that_carries_photos_is_read_by_its_text_block(tmp_path: Path) -> None:
+    first = opened(tmp_path)
+    first.add_user("Earlier turn")
+    first.add_assistant(assistant(1))
+    summary_turn = [
+        {"type": "text", "text": f"{SUMMARY_PREFIX}\nNotes\n\nGroup messages…"},
+        {"type": "text", "text": "Photo sent by x:"},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+    ]
+    first.add_user(summary_turn)
+    first.add_assistant(assistant(2))
+    second = opened(tmp_path)
+    assert second.generation == 2
+    assert second.messages[0] == {"role": "user", "content": summary_turn}
+    assert second.has_opened_with("Notes")

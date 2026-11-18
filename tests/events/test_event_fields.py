@@ -4,12 +4,17 @@ from line_group_agent.events.event_fields import (
     age_seconds_of,
     group_id_of,
     is_called_by_name,
+    is_external_image,
     is_redelivery,
     is_self_mentioned,
     is_text_message,
     local_time_of,
+    message_kind_of,
+    postback_of,
     quote_token_of,
+    strip_call_name,
     unsent_message_id_of,
+    webhook_event_id_of,
 )
 
 
@@ -133,3 +138,57 @@ def test_a_name_in_the_middle_or_inside_a_word_does_not(text: str) -> None:
 
 def test_no_names_means_no_call() -> None:
     assert not is_called_by_name(said("ソラ、ねえ"), ())
+
+
+def test_a_postback_gives_its_data_and_who_pressed() -> None:
+    event = {
+        "type": "postback",
+        "source": {"type": "group", "groupId": "Cg", "userId": "U1"},
+        "postback": {"data": "poll:p1:0"},
+    }
+    assert postback_of(event) == ("poll:p1:0", "U1")
+    without_user = {**event, "source": {"type": "group", "groupId": "Cg"}}
+    assert postback_of(without_user) == ("poll:p1:0", None)
+
+
+def test_an_event_that_is_not_a_postback_with_data_gives_none() -> None:
+    assert postback_of(text_event()) is None
+    assert postback_of({"type": "postback", "postback": {}}) is None
+    assert postback_of({"type": "postback", "postback": {"data": ""}}) is None
+
+
+def test_the_webhook_event_id_is_read_when_there_is_one() -> None:
+    assert webhook_event_id_of({"webhookEventId": "01H"}) == "01H"
+    assert webhook_event_id_of({"webhookEventId": ""}) is None
+    assert webhook_event_id_of({}) is None
+
+
+def test_a_call_name_at_either_end_is_removed_with_the_punctuation_next_to_it() -> None:
+    assert strip_call_name("Sora, itinerary", ("Sora",)) == "itinerary"
+    assert strip_call_name("itinerary、 SORA!", ("sora",)) == "itinerary"
+    assert strip_call_name("itinerary", ("Sora",)) == "itinerary"
+    assert strip_call_name("itinerary", ()) == "itinerary"
+
+
+def test_text_and_image_messages_are_the_kinds_the_agent_records() -> None:
+    assert message_kind_of(text_event()) == "text"
+    image = {**text_event(), "message": {"type": "image", "id": "1"}}
+    assert message_kind_of(image) == "image"
+
+
+def test_a_location_message_is_a_kind_too() -> None:
+    location = {**text_event(), "message": {"type": "location", "id": "1"}}
+    assert message_kind_of(location) == "location"
+
+
+def test_other_messages_and_events_have_no_kind() -> None:
+    assert message_kind_of({**text_event(), "message": {"type": "sticker", "id": "1"}}) is None
+    assert message_kind_of({"type": "join"}) is None
+    assert message_kind_of({"type": "postback", "message": {"type": "image"}}) is None
+
+
+def test_an_image_at_an_outside_address_is_external() -> None:
+    line = {"message": {"type": "image", "contentProvider": {"type": "line"}}}
+    outside = {"message": {"type": "image", "contentProvider": {"type": "external"}}}
+    assert not is_external_image(line) and is_external_image(outside)
+    assert not is_external_image({"message": {"type": "image"}})

@@ -31,6 +31,29 @@ def is_text_message(event: dict[str, Any]) -> bool:
     )
 
 
+TEXT_KIND = "text"
+IMAGE_KIND = "image"
+LOCATION_KIND = "location"
+
+
+def message_kind_of(event: dict[str, Any]) -> str | None:
+    """Return `text`, `image` or `location` for a message event the agent records, None for
+    any other event or kind of message (a sticker, a video, a file …)."""
+    if is_text_message(event):
+        return TEXT_KIND
+    message = event.get("message") or {}
+    if event.get("type") == "message" and message.get("type") in (IMAGE_KIND, LOCATION_KIND):
+        return str(message["type"])
+    return None
+
+
+def is_external_image(event: dict[str, Any]) -> bool:
+    """Return whether the image sits at an address of the sender's (LINE cannot give its
+    content), not in LINE's own storage."""
+    provider = (event.get("message") or {}).get("contentProvider") or {}
+    return provider.get("type") == "external"
+
+
 def quote_token_of(event: dict[str, Any]) -> str | None:
     """Return the token that quotes the event's message in a reply, or None without one."""
     token = (event.get("message") or {}).get("quoteToken")
@@ -43,6 +66,24 @@ def unsent_message_id_of(event: dict[str, Any]) -> str | None:
         return None
     message_id = (event.get("unsend") or {}).get("messageId")
     return message_id if isinstance(message_id, str) and message_id else None
+
+
+def postback_of(event: dict[str, Any]) -> tuple[str, str | None] | None:
+    """Return the data of a postback event and the id of the member who pressed the button
+    (None when LINE gives none), or None for any other event."""
+    if event.get("type") != "postback":
+        return None
+    data = (event.get("postback") or {}).get("data")
+    if not isinstance(data, str) or not data:
+        return None
+    user_id = (event.get("source") or {}).get("userId")
+    return data, user_id if isinstance(user_id, str) and user_id else None
+
+
+def webhook_event_id_of(event: dict[str, Any]) -> str | None:
+    """Return the id LINE gives an event (the same one when it sends the event again)."""
+    event_id = event.get("webhookEventId")
+    return event_id if isinstance(event_id, str) and event_id else None
 
 
 def is_self_mentioned(event: dict[str, Any]) -> bool:
@@ -79,6 +120,18 @@ def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
         if body.endswith(key) and not _runs_on(body[-len(key) - 1 : -len(key)]):
             return True
     return False
+
+
+def strip_call_name(text: str, names: tuple[str, ...]) -> str:
+    """Return `text` without a call name at its start or its end (any case), with the
+    spaces and punctuation next to it. Text that holds no call name is returned as is."""
+    body = text.strip(_EDGE)
+    for name in names:
+        if body.casefold().startswith(name.casefold()):
+            return body[len(name) :].strip(_EDGE)
+        if body.casefold().endswith(name.casefold()):
+            return body[: -len(name)].strip(_EDGE)
+    return text
 
 
 def _runs_on(neighbour: str) -> bool:

@@ -254,3 +254,49 @@ def test_without_a_running_conversation_every_message_before_the_cutoff_goes(
     cutoff = datetime.fromisoformat("2026-10-19T12:00:00+09:00")
     group_log.remove_older_than("Ca", cutoff, keep_since=None)
     assert [m.text for m in group_log.list_recent("Ca", 10)] == ["bad time", "recent"]
+
+
+def test_a_photo_row_holds_the_file_name_and_other_rows_do_not(tmp_path: Path) -> None:
+    log = GroupLog(tmp_path)
+    log.add("Cgroup", GroupMessage("t", "1", "U1", "Aki", "[写真]", image_file="1.jpg"))
+    log.add("Cgroup", message(2, "hello"))
+    path = tmp_path / "groups" / "Cgroup" / "messages.jsonl"
+    first, second = [json.loads(line) for line in path.read_text().splitlines()]
+    assert first["image_file"] == "1.jpg" and "image_file" not in second
+    assert [m.image_file for m in log.list_recent("Cgroup", 10)] == ["1.jpg", None]
+
+
+def keep_photo(tmp_path: Path, name: str) -> Path:
+    path = tmp_path / "groups" / "Cgroup" / "images" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x")
+    return path
+
+
+def test_removing_a_message_removes_its_photo_file(tmp_path: Path) -> None:
+    log = GroupLog(tmp_path)
+    log.add("Cgroup", GroupMessage("t", "1", "U1", "Aki", "[写真]", image_file="1.jpg"))
+    log.add("Cgroup", GroupMessage("t", "2", "U1", "Aki", "[写真]", image_file="2.jpg"))
+    gone, kept = keep_photo(tmp_path, "1.jpg"), keep_photo(tmp_path, "2.jpg")
+    log.remove("Cgroup", {"1"})
+    assert not gone.exists() and kept.exists()
+
+
+def test_a_photo_that_outlives_the_retention_period_is_removed_with_its_row(
+    tmp_path: Path,
+) -> None:
+    log = GroupLog(tmp_path)
+    log.add(
+        "Cgroup",
+        GroupMessage("2026-10-01T12:00:00+09:00", "1", "U1", "Aki", "[写真]", image_file="1.jpg"),
+    )
+    old = keep_photo(tmp_path, "1.jpg")
+    cutoff = datetime.fromisoformat("2026-11-01T00:00:00+09:00")
+    log.remove_older_than("Cgroup", cutoff, keep_since=None)
+    assert not old.exists()
+
+
+def test_removing_a_row_whose_photo_file_is_already_gone_is_fine(tmp_path: Path) -> None:
+    log = GroupLog(tmp_path)
+    log.add("Cgroup", GroupMessage("t", "1", "U1", "Aki", "[写真]", image_file="1.jpg"))
+    assert [m.message_id for m in log.remove("Cgroup", {"1"})] == ["1"]

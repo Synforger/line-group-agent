@@ -4,18 +4,24 @@ and a scripted API, for tests that cover answering, rolling over and the tab lis
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from line_group_agent.agent.answerer import Answerer
+from line_group_agent.agent.client_tool import ClientTool
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.rollover import Rollover
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.group_watcher import GroupWatcher
+from line_group_agent.media.image_store import ImageStore
+from line_group_agent.media.photo_picker import PhotoPicker
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 from line_group_agent.records.retention_sweeper import RetentionSweeper
@@ -27,6 +33,7 @@ from tests.fakes import FakeAnthropic, FakeLine, make_config
 
 TOKYO = timezone(timedelta(hours=9))
 GROUP = "Callowed"
+NOW_FOR_TESTS = datetime(2026, 11, 18, 12, 0, tzinfo=TOKYO)
 
 
 class Clock:
@@ -60,6 +67,8 @@ class World:
     rollover: Rollover
     retention: RetentionSweeper
     watcher: GroupWatcher
+    images: ImageStore
+    scrubber: SummaryScrubber
 
     def write_settings(self, **values: Any) -> None:
         self.config.settings_file.write_text(json.dumps(values), encoding="utf-8")
@@ -69,8 +78,15 @@ class World:
         return loaded
 
 
-def build_world(tmp_path: Path, answers: list[dict[str, Any]], **overrides: Any) -> World:
+def build_world(
+    tmp_path: Path,
+    answers: list[dict[str, Any]],
+    *,
+    tools: Iterable[ClientTool] = (),
+    **overrides: Any,
+) -> World:
     config = make_config(tmp_path, **overrides)
+    client_tools = ClientTools(tools)
     client = FakeAnthropic(answers)
     line = FakeLine(group_names={GROUP: "Trip friends"})
     clock = Clock()
@@ -83,15 +99,28 @@ def build_world(tmp_path: Path, answers: list[dict[str, Any]], **overrides: Any)
     overall.open()
     books = SpendBooks(overall, config.state_dir, config.budget, settings, conversations.count)
     tabs = TabsFile(config.tabs_file, conversations, books, settings, clock)
-    caller = ModelCaller(config, client, "SYSTEM", books)
-    deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
-    answerer = Answerer(config, caller, group_log, conversations, books, deleter)
+    caller = ModelCaller(config, client, "SYSTEM", books, extra_tools=client_tools.definitions())
+    scrubber = SummaryScrubber(config, caller, journal, conversations, books)
+    deleter = MessageDeleter(
+        group_log, conversations, search_limit=config.history_search_limit, scrubber=scrubber
+    )
+    images = ImageStore(config.state_dir)
+    answerer = Answerer(
+        config,
+        caller,
+        group_log,
+        conversations,
+        books,
+        deleter,
+        client_tools=client_tools,
+        photos=PhotoPicker(images, config.max_images_per_turn),
+    )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(
-        conversations, tabs, line, rollover, settings, clock, retention=retention
+        conversations, tabs, line, rollover, settings, clock, retention=retention, scrubber=scrubber
     )
     return World(
         config, client, line, clock, settings, group_log, journal, conversations, books,
-        tabs, caller, answerer, deleter, rollover, retention, watcher,
+        tabs, caller, answerer, deleter, rollover, retention, watcher, images, scrubber,
     )  # fmt: skip

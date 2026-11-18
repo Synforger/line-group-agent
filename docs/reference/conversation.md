@@ -11,6 +11,8 @@ like a chat you keep open. It is kept in the group's record, so it survives a re
 - **Every later turn** carries what the group said since the bot's last turn (at most
   `max_catch_up_messages`; the bot's own replies are already in the conversation) and the
   message that mentioned the bot.
+- **Either way** the newest [photos](group-tools.md#photos) the group sent since the bot's last
+  turn are attached as images.
 - The model's answers are kept exactly as the API sent them and sent back unchanged, and the
   conversation is only ever added to. That keeps the start of each request identical to the
   last one, so the API's prompt cache reads it instead of processing it again.

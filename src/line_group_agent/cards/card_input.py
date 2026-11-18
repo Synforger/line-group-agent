@@ -8,6 +8,7 @@ from __future__ import annotations
 import unicodedata
 from urllib.parse import quote, urlsplit
 
+from line_group_agent._common.one_line import one_line
 from line_group_agent.cards.card import (
     MAX_CARD_COUNT,
     PRICE_MAX_CHARS,
@@ -17,7 +18,6 @@ from line_group_agent.cards.card import (
     Card,
 )
 
-ELLIPSIS = "…"
 HTTPS_PREFIX = "https://"
 
 
@@ -42,34 +42,20 @@ def parse_cards(raw_input: object) -> list[Card]:
     return cards
 
 
-def cut_with_ellipsis(value: str, limit: int) -> str:
-    """Cut `value` to `limit` characters, ending in an ellipsis when it was cut."""
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1] + ELLIPSIS
-
-
 def _parse_card(item: object) -> Card | None:
     if not isinstance(item, dict):
         return None
     url = _usable_url(item.get("url"))
-    title = _one_line(item.get("title"), TITLE_MAX_CHARS)
+    title = one_line(item.get("title"), TITLE_MAX_CHARS)
     if url is None or not title:
         return None
     return Card(
         title=title,
-        text=_one_line(item.get("text"), TEXT_MAX_CHARS),
+        text=one_line(item.get("text"), TEXT_MAX_CHARS),
         url=url,
         image_url=_usable_url(item.get("image_url")),
-        price=_one_line(item.get("price"), PRICE_MAX_CHARS) or None,
+        price=one_line(item.get("price"), PRICE_MAX_CHARS) or None,
     )
-
-
-def _one_line(value: object, limit: int) -> str:
-    if not isinstance(value, str):
-        return ""
-    printable = "".join(c for c in value if c.isspace() or unicodedata.category(c) != "Cc")
-    return cut_with_ellipsis(" ".join(printable.split()), limit)
 
 
 def _usable_url(value: object) -> str | None:

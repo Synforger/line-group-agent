@@ -8,13 +8,16 @@ from line_group_agent.agent.prompt import (
     SUMMARY_REQUEST,
     build_envelope,
     build_system,
+    build_user_content,
     delete_messages_tool,
     extract_reply,
     format_search_results,
+    photo_caption,
     search_history_tool,
     show_cards_tool,
     summary_request,
 )
+from line_group_agent.media.photo_picker import Photo
 from line_group_agent.records.group_log import GroupMessage
 
 
@@ -181,3 +184,26 @@ def test_a_summary_after_a_deletion_is_told_not_to_write_what_was_deleted() -> N
     after = summary_request(after_deletion=True)
     assert after.startswith(SUMMARY_REQUEST) and after.endswith(SUMMARY_DELETION_NOTE)
     assert "Do not write the content of any deleted message" in after
+
+
+def photo(number: int, name: str | None = "Aki") -> Photo:
+    return Photo(message("[写真]", name, number), "image/jpeg", f"data{number}")
+
+
+def test_without_photos_the_user_turn_is_the_envelope_text() -> None:
+    assert build_user_content("ENVELOPE", []) == "ENVELOPE"
+
+
+def test_with_photos_each_comes_after_its_caption_oldest_first() -> None:
+    content = build_user_content("ENVELOPE", [photo(1), photo(2, None)])
+    assert content[0] == {"type": "text", "text": "ENVELOPE"}
+    assert [block["type"] for block in content] == ["text", "text", "image", "text", "image"]
+    assert content[1]["text"] == photo_caption(photo(1).message)
+    assert content[2]["source"] == {"type": "base64", "media_type": "image/jpeg", "data": "data1"}
+    assert "unknown" in content[3]["text"]
+
+
+def test_the_caption_names_the_sender_and_the_time_and_cannot_be_closed_early() -> None:
+    caption = photo_caption(message("[写真]", "A\"k'i"))
+    assert caption.startswith("Photo sent by ") and "2026-11-18T12:00:01+09:00" in caption
+    assert "A&quot;k'i" in caption

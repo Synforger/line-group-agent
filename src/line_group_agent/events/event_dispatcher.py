@@ -3,14 +3,20 @@
 The webhook endpoint queues events here. For an allowed group, each text message is
 recorded, and a message that mentions the bot is answered through the answerer, quoting
 the message and with a fixed text instead when no answer could be made. The reply, once
-sent, is recorded too (with a line naming any cards that went with it), so the next
-mention sees what the bot said.
+sent, is recorded too (with a line naming any cards, polls or locations that went with it),
+so the next mention sees what the bot said.
 
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
-A message a member takes back (unsend) is deleted from the records. When the bot joins
-an allowed group it introduces itself with a fixed text.
+A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
+without the model.
+
+Other things a member does are recorded or counted without an answer: a photo is kept (made
+small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
+a message taken back (unsend) is deleted from the records, and a button press on a poll
+card (a postback) is counted as a vote. When the bot joins an allowed group it introduces
+itself with a fixed text, and when a member joins it may welcome them with another.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -47,19 +53,30 @@ from line_group_agent.alerts.alert_notifier import AlertNotifier
 from line_group_agent.cards.card_record import format_card_record
 from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
+    IMAGE_KIND,
+    LOCATION_KIND,
+    TEXT_KIND,
     age_seconds_of,
     group_id_of,
     is_called_by_name,
+    is_external_image,
     is_redelivery,
     is_self_mentioned,
-    is_text_message,
     local_time_of,
+    message_kind_of,
+    postback_of,
     quote_token_of,
+    strip_call_name,
     unsent_message_id_of,
+    webhook_event_id_of,
 )
 from line_group_agent.events.mention_limiter import MentionLimiter, MentionVerdict
+from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
+from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.line_api.line_client import LineApiError, LineClient
+from line_group_agent.media.location_record import shared_location_line
+from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
 logger = logging.getLogger(__name__)
@@ -94,8 +111,10 @@ class NoticeTexts:
     error: str = ""
     rate_limit: str = ""
     intro: str = ""
+    welcome: str = ""
     help: str = ""
     help_keywords: tuple[str, ...] = ()
+    itinerary_keywords: tuple[str, ...] = ()
 
 
 class EventDispatcher:
@@ -117,6 +136,9 @@ class EventDispatcher:
         limiter: MentionLimiter | None = None,
         wait_notice: WaitNotice | None = None,
         deleter: MessageDeleter | None = None,
+        postbacks: PostbackHandler | None = None,
+        itineraries: ItineraryBook | None = None,
+        media: MediaRecorder | None = None,
         notifier: AlertNotifier | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -129,6 +151,9 @@ class EventDispatcher:
         self.limiter = limiter
         self.wait_notice = wait_notice
         self.deleter = deleter
+        self.postbacks = postbacks
+        self.itineraries = itineraries
+        self.media = media
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
@@ -177,12 +202,21 @@ class EventDispatcher:
         if group_id not in self.allowed_group_ids and not await self._admit(event, group_id):
             return
         if event.get("type") == "join":
-            await self._introduce(group_id, event)
+            await self._announce(group_id, event, self.texts.intro)
+            return
+        if event.get("type") == "memberJoined":
+            await self._announce(group_id, event, self.texts.welcome)
             return
         if (unsent_id := unsent_message_id_of(event)) is not None:
             await self._forget(group_id, unsent_id)
             return
-        if not is_text_message(event):
+        if (postback := postback_of(event)) is not None:
+            await self._count_vote(group_id, event, *postback)
+            return
+        kind = message_kind_of(event)
+        if kind is None or (kind == IMAGE_KIND and self.media is None):
+            return
+        if kind == LOCATION_KIND and shared_location_line(event["message"]) is None:
             return
 
         message = event["message"]
@@ -192,17 +226,21 @@ class EventDispatcher:
             return
         source = event.get("source") or {}
         user_id = source.get("userId") if isinstance(source.get("userId"), str) else None
+        text, image_file = await self._content_of(group_id, event, kind)
         record = GroupMessage(
             time=local_time_of(event),
             message_id=message_id,
             user_id=user_id,
             display_name=await self._name_of(group_id, user_id),
-            text=message["text"],
+            text=text,
+            image_file=image_file,
         )
         self.group_log.add(group_id, record)
         if self.observer is not None:
             await self.observer.note_message(group_id, record)
 
+        if kind != TEXT_KIND:
+            return
         if not (is_self_mentioned(event) or is_called_by_name(event, self.call_names)):
             return
         if is_redelivery(event) and self._is_too_old(event):
@@ -216,7 +254,24 @@ class EventDispatcher:
         if self._asks_for_help(event):
             await self._send_help(group_id, event)
             return
+        if await self._send_itinerary(group_id, event):
+            return
         await self._answer_mention(group_id, event, record)
+
+    async def _content_of(
+        self, group_id: str, event: dict[str, Any], kind: str
+    ) -> tuple[str, str | None]:
+        """Return the text the record holds for a message and, for a photo, the name of the
+        file it was kept in (None when it could not be kept)."""
+        message = event["message"]
+        if kind == LOCATION_KIND:
+            return str(shared_location_line(message)), None
+        if kind != IMAGE_KIND or self.media is None:
+            return message["text"], None
+        if is_external_image(event):
+            return IMAGE_RECORD_TEXT, None
+        saved = await self.media.save_image(group_id, str(message.get("id", "")))
+        return IMAGE_RECORD_TEXT, saved
 
     async def _answer_mention(
         self, group_id: str, event: dict[str, Any], record: GroupMessage
@@ -245,7 +300,7 @@ class EventDispatcher:
     async def _deliver(
         self, group_id: str, reply_token: Any, quote_token: str | None, answer: Answer
     ) -> None:
-        if not answer.text and not answer.cards:
+        if not answer.text and not answer.cards and not answer.extras:
             logger.info("answer: no reply to send")
             return
         sent = await self._sender.send(group_id, reply_token, answer, quote_token=quote_token)
@@ -264,10 +319,34 @@ class EventDispatcher:
 
     def _asks_for_help(self, event: dict[str, Any]) -> bool:
         """Whether the mention, with the mention text removed, is only a help keyword."""
-        if not self.texts.help or not self.texts.help_keywords:
+        return bool(self.texts.help) and self._is_only_keyword(event, self.texts.help_keywords)
+
+    def _is_only_keyword(self, event: dict[str, Any], keywords: tuple[str, ...]) -> bool:
+        """Whether the message, without the mention or the call name, is only a keyword."""
+        if not keywords:
             return False
-        rest = _without_mentions(event).strip().strip("?？!！。、 ").casefold()
-        return any(rest == keyword.casefold() for keyword in self.texts.help_keywords)
+        text = strip_call_name(_without_mentions(event), self.call_names)
+        rest = text.strip().strip("?？!！。、 ").casefold()
+        return any(rest == keyword.casefold() for keyword in keywords)
+
+    async def _send_itinerary(self, group_id: str, event: dict[str, Any]) -> bool:
+        """Send the saved itinerary as it is when the mention is only the itinerary keyword;
+        return whether it was sent (False when no itinerary is saved, so the model answers)."""
+        if self.itineraries is None or not self._is_only_keyword(
+            event, self.texts.itinerary_keywords
+        ):
+            return False
+        itinerary = self.itineraries.get(group_id)
+        if itinerary is None:
+            return False
+        logger.info("answer: sent the saved itinerary")
+        await self._sender.send(
+            group_id,
+            event.get("replyToken"),
+            Answer(itinerary.text, record=False),
+            quote_token=quote_token_of(event),
+        )
+        return True
 
     async def _send_help(self, group_id: str, event: dict[str, Any]) -> None:
         # The list is sent as written, without calling the model (no cost). It is not
@@ -280,16 +359,31 @@ class EventDispatcher:
             quote_token=quote_token_of(event),
         )
 
-    async def _introduce(self, group_id: str, event: dict[str, Any]) -> None:
-        if not self.texts.intro:
+    async def _announce(self, group_id: str, event: dict[str, Any], text: str) -> None:
+        """Send a fixed text through the event's reply token (the introduction when the bot
+        joins, the welcome when a member does) and record it as the bot's own message."""
+        if not text:
             return
-        sent = await self._sender.send(group_id, event.get("replyToken"), Answer(self.texts.intro))
+        sent = await self._sender.send(group_id, event.get("replyToken"), Answer(text))
         if sent is None:
             return
         record = _bot_reply(sent)
         self.group_log.add(group_id, record)
         if self.observer is not None:
             await self.observer.note_message(group_id, record)
+
+    async def _count_vote(
+        self, group_id: str, event: dict[str, Any], data: str, user_id: str | None
+    ) -> None:
+        if self.postbacks is None:
+            return
+        self.postbacks.handle(
+            group_id,
+            data=data,
+            user_id=user_id,
+            display_name=await self._name_of(group_id, user_id),
+            event_id=webhook_event_id_of(event),
+        )
 
     async def _forget(self, group_id: str, message_id: str) -> None:
         if self.deleter is None:
@@ -378,6 +472,7 @@ def _bot_reply(sent: Answer) -> GroupMessage:
     parts = [sent.text] if sent.text else []
     if sent.cards:
         parts.append(format_card_record(sent.cards))
+    parts.extend(extra.record_line for extra in sent.extras)
     return GroupMessage(
         time=datetime.now().astimezone().isoformat(timespec="seconds"),
         message_id=f"bot-{uuid.uuid4()}",

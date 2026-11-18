@@ -14,19 +14,30 @@ import httpx2
 from fastapi import FastAPI
 
 from line_group_agent.agent.answerer import Answerer
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import build_system
 from line_group_agent.agent.rollover import Rollover
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.alerts.alert_notifier import AlertNotifier
+from line_group_agent.bills.bill_tools import bill_tools
 from line_group_agent.config.agent_config import AgentConfig, ConfigError, load_secrets
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.event_dispatcher import EventDispatcher, NoticeTexts
 from line_group_agent.events.group_watcher import GroupWatcher
 from line_group_agent.events.mention_limiter import MentionLimiter
+from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
+from line_group_agent.itinerary.itinerary_book import ItineraryBook
+from line_group_agent.itinerary.itinerary_tools import itinerary_tools
 from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.line_api.push_quota import PushQuota
+from line_group_agent.media.image_store import ImageStore
+from line_group_agent.media.media_recorder import MediaRecorder
+from line_group_agent.media.photo_picker import PhotoPicker
+from line_group_agent.polls.poll_book import PollBook
+from line_group_agent.polls.poll_tools import poll_tools
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 from line_group_agent.records.retention_sweeper import RetentionSweeper
@@ -66,13 +77,43 @@ def build_app(config: AgentConfig) -> FastAPI:
     client = create_anthropic_client(secrets.anthropic_api_key)
     line = LineClient(secrets.line_channel_access_token)
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
-    caller = ModelCaller(config, client, build_system(persona), books, observer=notifier)
-    deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
-    answerer = Answerer(config, caller, group_log, conversations, books, deleter)
+    polls = PollBook(config.state_dir, clock)
+    itineraries = ItineraryBook(config.state_dir, clock)
+    client_tools = ClientTools([*poll_tools(polls), *itinerary_tools(itineraries), *bill_tools()])
+    caller = ModelCaller(
+        config,
+        client,
+        build_system(persona),
+        books,
+        observer=notifier,
+        extra_tools=client_tools.definitions(),
+    )
+    scrubber = SummaryScrubber(config, caller, journal, conversations, books)
+    deleter = MessageDeleter(
+        group_log, conversations, search_limit=config.history_search_limit, scrubber=scrubber
+    )
+    images = ImageStore(config.state_dir)
+    answerer = Answerer(
+        config,
+        caller,
+        group_log,
+        conversations,
+        books,
+        deleter,
+        client_tools=client_tools,
+        photos=PhotoPicker(images, config.max_images_per_turn),
+    )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(
-        conversations, tabs, line, rollover, settings, clock, retention=retention
+        conversations,
+        tabs,
+        line,
+        rollover,
+        settings,
+        clock,
+        retention=retention,
+        scrubber=scrubber,
     )
     tabs.refresh()
     dispatcher = EventDispatcher(
@@ -89,8 +130,10 @@ def build_app(config: AgentConfig) -> FastAPI:
             error=config.error_text,
             rate_limit=config.rate_limit_text,
             intro=intro,
+            welcome=config.welcome_text,
             help=_read_text_file(config.help_file, "help_file"),
             help_keywords=config.help_keywords,
+            itinerary_keywords=config.itinerary_keywords,
         ),
         limiter=MentionLimiter(config.max_mentions_per_user_per_hour),
         wait_notice=WaitNotice(
@@ -100,6 +143,9 @@ def build_app(config: AgentConfig) -> FastAPI:
             min_push_left=config.wait_min_push_left,
         ),
         deleter=deleter,
+        postbacks=PostbackHandler(polls),
+        itineraries=itineraries,
+        media=_media_recorder(config, line, images),
         notifier=notifier,
     )
     return create_app(
@@ -109,6 +155,16 @@ def build_app(config: AgentConfig) -> FastAPI:
         on_close=[line.close, client.close],
         background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
     )
+
+
+def _media_recorder(
+    config: AgentConfig, line: LineClient, images: ImageStore
+) -> MediaRecorder | None:
+    """Return the recorder of photos, or None when `max_images_per_turn` is 0 (photos are
+    then neither kept nor recorded)."""
+    if config.max_images_per_turn == 0:
+        return None
+    return MediaRecorder(line, images, config.max_image_edge_pixels)
 
 
 def _read_intro(config: AgentConfig) -> str:

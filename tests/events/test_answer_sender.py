@@ -6,6 +6,8 @@ from line_group_agent.agent.answerer import Answer
 from line_group_agent.cards.card import Card
 from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.line_api.line_client import LineApiError, ReplyResult
+from line_group_agent.line_api.outgoing_extra import OutgoingExtra
+from line_group_agent.line_api.quick_reply import QuickReplyItem
 from tests.fakes import FakeLine
 
 pytestmark = pytest.mark.anyio
@@ -170,3 +172,42 @@ async def test_a_card_or_quote_that_was_loosened_is_not_reported_as_a_failure() 
     sender = AnswerSender(line, notifier=notifier)  # type: ignore[arg-type]
     await sender.send(GROUP, None, BOTH, quote_token="q1")
     assert notifier.failures == 0
+
+
+POLL = OutgoingExtra({"type": "flex"}, "[投票] p1 Where?")
+QUICK = [QuickReplyItem("Kyoto", "Sora、Kyoto")]
+
+
+async def test_extra_messages_and_quick_replies_go_out_with_the_reply() -> None:
+    line = FakeLine()
+    answer = Answer("Vote below.", extras=[POLL], quick_replies=QUICK)
+    sent = await AnswerSender(line).send(GROUP, TOKEN, answer)
+    assert sent == answer
+    [call] = line.calls
+    assert call.extras == [POLL] and call.quick_replies == QUICK
+
+
+async def test_an_extra_message_alone_is_sent() -> None:
+    line = FakeLine()
+    sent = await AnswerSender(line).send(GROUP, TOKEN, Answer(None, extras=[POLL]))
+    assert sent is not None and sent.extras == [POLL]
+
+
+async def test_extras_refused_twice_fall_back_to_a_push_of_the_text_only() -> None:
+    line = FakeLine(reply_results=[ReplyResult.MESSAGE_REFUSED, ReplyResult.MESSAGE_REFUSED])
+    sent = await AnswerSender(line).send(
+        GROUP, TOKEN, Answer("Vote below.", extras=[POLL], quick_replies=QUICK)
+    )
+    assert sent == Answer("Vote below.")
+    assert [(c.kind, c.extras) for c in line.calls] == [
+        ("reply", [POLL]),
+        ("reply", [POLL]),
+        ("push", []),
+    ]
+
+
+async def test_a_push_refused_with_extras_is_tried_again_with_the_text_only() -> None:
+    line = FakeLine(reply_accepts=False, push_statuses=[400, None])
+    sent = await AnswerSender(line).send(GROUP, TOKEN, Answer("Vote below.", extras=[POLL]))
+    assert sent == Answer("Vote below.")
+    assert [c.extras for c in line.calls if c.kind == "push"] == [[POLL], []]

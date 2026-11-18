@@ -18,6 +18,8 @@ from anthropic.types import Message
 from line_group_agent.cards.card import Card
 from line_group_agent.config.agent_config import AgentConfig, parse_config
 from line_group_agent.line_api.line_client import LineApiError, ReplyResult
+from line_group_agent.line_api.outgoing_extra import OutgoingExtra
+from line_group_agent.line_api.quick_reply import QuickReplyItem
 
 PRICES_USD = {
     "input_per_mtok": 0.10,
@@ -132,6 +134,8 @@ class SentCall:
     cards: list[Card]
     with_images: bool
     quote_token: str | None = None
+    extras: list[OutgoingExtra] | None = None
+    quick_replies: list[QuickReplyItem] | None = None
 
 
 class FakeLine:
@@ -153,7 +157,10 @@ class FakeLine:
         members: dict[str, bool | None] | None = None,
         group_names: dict[str, str] | None = None,
         remaining_messages: int | None = 1000,
+        contents: dict[str, tuple[bytes, str]] | None = None,
     ) -> None:
+        self.contents = contents or {}
+        self.content_lookups: list[str] = []
         self.remaining_messages = remaining_messages
         self.quota_lookups = 0
         self.members = members or {}
@@ -183,9 +190,20 @@ class FakeLine:
         *,
         with_images: bool = True,
         quote_token: str | None = None,
+        extras: Sequence[OutgoingExtra] = (),
+        quick_replies: Sequence[QuickReplyItem] = (),
     ) -> ReplyResult:
         self.calls.append(
-            SentCall("reply", reply_token, text, list(cards), with_images, quote_token)
+            SentCall(
+                "reply",
+                reply_token,
+                text,
+                list(cards),
+                with_images,
+                quote_token,
+                list(extras),
+                list(quick_replies),
+            )  # fmt: skip
         )
         if self.reply_results:
             return self.reply_results.pop(0)
@@ -199,8 +217,21 @@ class FakeLine:
         *,
         with_images: bool = True,
         quote_token: str | None = None,
+        extras: Sequence[OutgoingExtra] = (),
+        quick_replies: Sequence[QuickReplyItem] = (),
     ) -> None:
-        self.calls.append(SentCall("push", to, text, list(cards), with_images, quote_token))
+        self.calls.append(
+            SentCall(
+                "push",
+                to,
+                text,
+                list(cards),
+                with_images,
+                quote_token,
+                list(extras),
+                list(quick_replies),
+            )  # fmt: skip
+        )
         status = self.push_statuses.pop(0) if self.push_statuses else None
         if status is not None:
             raise LineApiError("push", status)
@@ -208,6 +239,10 @@ class FakeLine:
     async def get_member_name(self, group_id: str, user_id: str) -> str | None:
         self.name_lookups += 1
         return self.names.get(user_id)
+
+    async def get_message_content(self, message_id: str) -> tuple[bytes, str] | None:
+        self.content_lookups.append(message_id)
+        return self.contents.get(message_id)
 
     async def get_group_name(self, group_id: str) -> str | None:
         self.group_name_lookups += 1
