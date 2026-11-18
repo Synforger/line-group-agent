@@ -91,3 +91,13 @@ so a member can ask "what is this?" about a photo.
 - **A place the bot recommends** can be sent as a location message after its reply (a map
   card that opens the map when tapped), with a real address and coordinates. One location goes
   out per reply, and it is recorded in the same form
+
+## Quick replies
+
+When the bot asks a question that a tap can answer ("Kyoto or Osaka?"), it can put up to five
+buttons under its reply. LINE shows them under the last message and removes them once one is
+tapped or someone else writes. A tap sends the option as the tapper's own message, written
+`<first call name>、<option>` (for example `Sora、Kyoto`), so it reaches the bot like a typed
+call. Without any `call_names` configured, a tap sends the option alone, which does not call
+the bot; set a call name when you want the buttons to work. A button shows the first 20
+characters of its option.

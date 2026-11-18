@@ -69,3 +69,13 @@ async def test_extras_that_LINE_refuses_are_not_recorded(tmp_path: Path) -> None
     )
     await dispatcher.handle(text_event(mentions_bot=True))
     assert group_log.list_recent(ALLOWED, 10)[-1].text == "Here."
+
+
+async def test_a_tap_on_a_quick_reply_calls_the_bot_like_a_typed_message(tmp_path: Path) -> None:
+    line = FakeLine(names={"U1": "Aki"})
+    answerer = ExtrasAnswerer(Answer("Kyoto it is."))
+    dispatcher = EventDispatcher(
+        frozenset({ALLOWED}), line, GroupLog(tmp_path), answerer, call_names=("Sora",)
+    )
+    await dispatcher.handle(text_event(text="Sora、Kyoto"))
+    assert line.replies == [("reply-token-1", "Kyoto it is.")]
