@@ -36,6 +36,10 @@ class GroupLog:
         """Append one message to the group's record."""
         append_json_line(self._path(group_id), asdict(message))
 
+    def has_message(self, group_id: str, message_id: str) -> bool:
+        """Return whether a message with this id is already in the group's record."""
+        return any(m.message_id == message_id for m in self._load(group_id))
+
     def list_recent(
         self, group_id: str, count: int, *, exclude_message_id: str | None = None
     ) -> list[GroupMessage]:

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +108,52 @@ async def test_a_refused_reply_token_falls_back_to_one_push(
         await dispatcher.handle(text_event(mentions_bot=True))
     assert line.pushes == [(ALLOWED, "Sure.")]
     assert len([r for r in caplog.records if "push" in r.getMessage()]) == 1
+
+
+def redelivered(event: dict[str, Any], *, age_seconds: float) -> dict[str, Any]:
+    now_ms = int(datetime.now().timestamp() * 1000)
+    return {
+        **event,
+        "timestamp": now_ms - int(age_seconds * 1000),
+        "deliveryContext": {"isRedelivery": True},
+    }
+
+
+async def test_a_message_that_arrives_again_is_recorded_and_answered_once(
+    tmp_path: Path,
+) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path)
+    event = text_event(mentions_bot=True)
+    await dispatcher.handle(event)
+    await dispatcher.handle(redelivered(event, age_seconds=5))
+    assert len(group_log.list_recent(ALLOWED, 10)) == 1
+    assert len(answerer.calls) == 1
+    assert len(line.replies) == 1 and line.pushes == []
+
+
+async def test_a_redelivered_mention_inside_the_window_is_answered(tmp_path: Path) -> None:
+    dispatcher, line, _, answerer = setup(tmp_path, reply_accepts=False)
+    await dispatcher.handle(redelivered(text_event(mentions_bot=True), age_seconds=60))
+    assert len(answerer.calls) == 1
+    assert line.pushes == [(ALLOWED, "Sure.")]
+
+
+async def test_a_redelivered_mention_past_the_window_is_recorded_but_not_answered(
+    tmp_path: Path,
+) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path)
+    await dispatcher.handle(redelivered(text_event(mentions_bot=True), age_seconds=601))
+    assert len(group_log.list_recent(ALLOWED, 10)) == 1
+    assert answerer.calls == []
+    assert line.replies == [] and line.pushes == []
+
+
+async def test_an_old_mention_delivered_the_first_time_is_still_answered(
+    tmp_path: Path,
+) -> None:
+    dispatcher, _, _, answerer = setup(tmp_path)
+    await dispatcher.handle(text_event(mentions_bot=True))  # timestamp from 2025
+    assert len(answerer.calls) == 1
 
 
 async def test_events_of_other_groups_are_dropped_and_only_their_id_is_logged(

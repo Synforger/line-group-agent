@@ -4,6 +4,10 @@ The webhook endpoint queues events here. For an allowed group, each text message
 recorded, and a message that mentions the bot is answered through the answerer.
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
+
+LINE may send an event again after a failed delivery (webhook redelivery). A message
+whose id is already in the group's record is skipped, so it is recorded and answered
+once. A redelivered mention older than the answer window is recorded but not answered.
 """
 
 from __future__ import annotations
@@ -11,10 +15,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from datetime import datetime
 from typing import Any, Protocol
 
 from line_group_agent.events.event_fields import (
+    age_seconds_of,
     group_id_of,
+    is_redelivery,
     is_self_mentioned,
     is_text_message,
     local_time_of,
@@ -25,6 +32,7 @@ from line_group_agent.records.group_log import GroupLog, GroupMessage
 logger = logging.getLogger(__name__)
 
 QUEUE_CAPACITY = 1000
+DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 
 
 class MentionAnswerer(Protocol):
@@ -42,11 +50,14 @@ class EventDispatcher:
         line: LineClient,
         group_log: GroupLog,
         answerer: MentionAnswerer,
+        *,
+        redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
     ) -> None:
         self.allowed_group_ids = allowed_group_ids
         self.line = line
         self.group_log = group_log
         self.answerer = answerer
+        self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(QUEUE_CAPACITY)
         self._worker: asyncio.Task[None] | None = None
         self._names: dict[tuple[str, str], str | None] = {}
@@ -91,11 +102,15 @@ class EventDispatcher:
             return
 
         message = event["message"]
+        message_id = str(message.get("id", ""))
+        if message_id and self.group_log.has_message(group_id, message_id):
+            logger.info("events: a message already handled arrived again; skipped")
+            return
         source = event.get("source") or {}
         user_id = source.get("userId") if isinstance(source.get("userId"), str) else None
         record = GroupMessage(
             time=local_time_of(event),
-            message_id=str(message.get("id", "")),
+            message_id=message_id,
             user_id=user_id,
             display_name=await self._name_of(group_id, user_id),
             text=message["text"],
@@ -104,11 +119,18 @@ class EventDispatcher:
 
         if not is_self_mentioned(event):
             return
+        if is_redelivery(event) and self._is_too_old(event):
+            logger.info("answer: a redelivered mention is past the answer window; not answered")
+            return
         text = await self.answerer.answer(group_id, record)
         if text is None:
             logger.info("answer: no reply to send")
             return
         await self._send(group_id, event.get("replyToken"), text)
+
+    def _is_too_old(self, event: dict[str, Any]) -> bool:
+        age = age_seconds_of(event, datetime.now().astimezone())
+        return age is not None and age > self.redelivered_answer_window_seconds
 
     async def _work(self) -> None:
         while True:

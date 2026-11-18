@@ -86,3 +86,11 @@ def test_groups_are_kept_apart(tmp_path: Path) -> None:
 def test_a_group_id_cannot_leave_the_state_folder(tmp_path: Path, group_id: str) -> None:
     with pytest.raises(ValueError):
         GroupLog(tmp_path).add(group_id, message(1, "x"))
+
+
+def test_has_message_finds_a_recorded_message_id(tmp_path: Path) -> None:
+    log = GroupLog(tmp_path)
+    assert not log.has_message("Cgroup", "1")
+    log.add("Cgroup", message(1, "hello"))
+    assert log.has_message("Cgroup", "1")
+    assert not log.has_message("Cgroup", "2")
