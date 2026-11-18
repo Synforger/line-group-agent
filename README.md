@@ -23,6 +23,17 @@ short answer. It stays quiet otherwise.
   them as a row of cards you swipe sideways (a LINE Flex Message carousel): for each
   one a name, a price, a short line, an optional picture and an "open" button that
   goes to its page. Up to 10 cards; see [Cards](docs/reference/cards.md).
+- **Runs polls and finds a date.** Ask it for a vote and it sends a card with one button
+  per option; pressing a button counts a vote without the model and without a message in
+  the group. A date poll lets each member mark every date that suits them. See
+  [Tools for the group](docs/reference/group-tools.md).
+- **Keeps the trip itinerary and splits costs.** The group has one itinerary the bot
+  reads and rewrites on request (the last five versions are kept), and a mention with only
+  the word "itinerary" gets it back at no cost. Costs are split in code, exactly, with the
+  fewest transfers.
+- **Sees photos and places.** The newest photos sent since its last turn are shown to the
+  model; a shared location is recorded, and the bot can send a place as a map message. It
+  can also put tap-to-answer buttons under a question and welcome a new member.
 - **Says only what it means to say.** Only the text the model puts inside
   `<reply>…</reply>` is sent to the group; its working notes never are. A reply is
   plain text (LINE shows no Markdown) and quotes the message that called the bot.
@@ -34,7 +45,11 @@ short answer. It stays quiet otherwise.
   it is removed from the group record and the conversation, and the conversation
   starts afresh from a summary that leaves it out. Records older than a set number
   of days are deleted too (30 by default), the running conversation and the
-  summaries excepted; see [Deleting messages](docs/reference/deleting.md).
+  summaries excepted; see [Deleting messages](docs/reference/deleting.md). A summary
+  that quoted the deleted message is rewritten without it.
+- **Can learn an older history.** `line-group-agent import-history` puts the text file
+  LINE makes with "send chat history" into a group's record; see
+  [Importing an old chat history](docs/reference/importing-history.md).
 - **Tells you when it is stuck.** A short push message reaches you when the Claude API
   keeps failing, the month's spend passes 80% of the limit, or a send to LINE fails.
 - **Stays within a monthly budget.** Each answer's cost is counted from the API's
@@ -56,8 +71,10 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │  3. mentioned? continue the group's conversation with the Claude API ──▶ web search / web fetch
                                                                │                                  ├─▶ search_history (local record)
                                                                │                                  ├─▶ delete_messages (your own messages, the bot's replies)
-                                                               │                                  └─▶ show_cards (candidates as cards)
-                                                               └─ 4. reply, text then cards (or push if the reply token expired)
+                                                               │                                  ├─▶ show_cards (candidates as cards)
+                                                               │                                  └─▶ polls, itinerary, split_bill, send_location, suggest_replies
+                                                               └─ 4. reply: text, cards, polls and places, quick replies (or push if the reply token expired)
+                                                               (button presses on a poll card arrive as postbacks and are counted without a reply)
 ```
 
 - The server listens on loopback only. Reaching it from LINE (HTTPS on a public
@@ -163,8 +180,11 @@ How the budget is kept:
   workspace in the Claude Console.
 - A reply uses LINE's reply token and is free. When the model takes longer than
   the token lives (about a minute), the agent sends the answer as a push message
-  instead, which counts against your account's monthly message quota. Cards go in
-  the same call as the text, as a second message.
+  instead, which counts against your account's monthly message quota. Cards, polls,
+  a map message and quick reply buttons go in the same call as the text. A poll vote
+  and a welcome use no message at all.
+- A photo given to the model costs input tokens like any other (a photo is scaled down to
+  `max_image_edge_pixels` first; at most `max_images_per_turn` go with one mention).
 - When an answer needs web work, the agent sends a short "one moment" text first (using
   the reply token) and the answer follows as a push message. It does so only while LINE
   reports enough messages left this month (`wait_min_push_left`).
@@ -175,7 +195,10 @@ All under `state_dir`:
 
 | Path | What |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | Every text message of the group and every reply the bot sent (marked `from_bot`; a reply that carried cards ends with a line naming them), one JSON object per line. Appended to; messages are removed when deleted or older than `retention_days` |
+| `groups/<groupId>/messages.jsonl` | Every text message of the group, a line for each photo (`[写真]`) and location (`[位置]`), and every reply the bot sent (marked `from_bot`; a reply that carried cards, a poll or a place ends with a line naming them), one JSON object per line. Appended to; messages are removed when deleted or older than `retention_days` |
+| `groups/<groupId>/images/` | The photos of the group, made small enough for the model; removed with their messages |
+| `groups/<groupId>/polls.json` | The group's polls and who voted for what |
+| `groups/<groupId>/itinerary.json` | The group's trip itinerary and its last five earlier versions |
 | `conversations/g-<groupId>.jsonl` | The group's running conversation: what was sent to the model and what it answered, one row per line, for a chat client to show read-only |
 | `groups/<groupId>/journal/<date>-gen<N>.md` | The summary written when the group's conversation number `N` was rolled over. Never deleted |
 | `groups/<groupId>/spend.json` | The group's month, in the form of `spend.json` |

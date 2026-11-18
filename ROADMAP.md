@@ -13,16 +13,19 @@
 - Deletes messages on request (`delete_messages`) and when a member unsends one, from the group record and the conversation, and starts the conversation afresh from a summary that leaves them out; deletes records older than a set number of days, keeping the running conversation and the summaries
 - Sends the operator a short push message when the Claude API keeps failing, the month's spend passes 80% of its limit, or a send to LINE fails
 - Shows candidates as a carousel of cards (Flex Message): name, price, a short line, an optional picture and an "open" button each, up to 10 cards, sent after the reply text; the cards are written into the group's record so "the second one" can be followed up
+- Runs polls (a card with one button per option; a press is counted by the agent without the model and without any message) and date polls (each member marks every date that suits them), counts and closes them on request
+- Keeps the group's trip itinerary as text, replaced whole on request with the last five versions kept, and returns it at no cost to a mention that is only an itinerary keyword
+- Splits costs in code: whole yen, each member's share and balance, and the fewest transfers
+- Reads photos: the newest ones since its last turn are shown to the model, scaled down first; records shared locations; can send a place as a map message
+- Puts tap-to-answer buttons under a question, and welcomes a new member with a fixed text
+- Rewrites a summary that quoted a message once that message is deleted
+- Imports an old LINE chat history file into a group's record (`import-history`)
 - Keeps a conversation record per group, a tab list and a monthly spend file (overall and per group) that a chat client can show read-only
 - Stops calling the API, with a fixed reply, when one more answer could pass the monthly limit of the whole agent or of the group (the limit divided by the number of groups)
 - Uses a one-hour prompt cache by default (five minutes is a setting)
 
 ## May come next
 
-- Vote and choice buttons on the cards, and counting the votes
-- A date picker button for finding a date that suits everyone
-- Reading photos and locations sent to the group
-- Deleting a message from the summaries too, not only from the record and the conversation
 - Small in-app pages (LIFF) such as a shared itinerary
 - Messages the bot sends without being mentioned (push)
 

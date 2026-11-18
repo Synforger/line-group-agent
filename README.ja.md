@@ -22,6 +22,16 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
   (LINE の Flex Message の carousel) で送れます。候補ごとに、名前・値段・短い一言・
   あれば画像・ページへ飛ぶ「開く」ボタン。最大 10 枚。[カード](docs/reference/cards.md)
   を見てください。
+- **投票と日程合わせ。** 「投票して」と頼むと、選択肢ごとのボタンが付いたカードを送ります。
+  ボタンを押すと model を呼ばずに票が数えられ、グループには何も流れません。日程合わせは、
+  各自が都合のいい日をぜんぶ押せます。[グループの道具](docs/reference/group-tools.md)を
+  見てください。
+- **旅の予定表と割り勘。** グループに予定表が 1 つあり、頼まれたら bot が読み、書き直します
+  (前の版は 5 つまで残る)。「itinerary」だけのメンションには、費用なしで予定表をそのまま返します。
+  割り勘は code で正確に計算し、精算の回数が最少の一覧を返します。
+- **写真と場所。** 前の自分の番より後に送られた写真の新しい分を model に見せます。共有された
+  位置は記録に残り、bot も場所を地図のメッセージで送れます。質問の下にタップで答えるボタンを
+  付けたり、新しく入った人に一言かけたりもできます。
 - **送るのは決めた所だけ。** model が `<reply>…</reply>` の中に書いた文だけがグループに
   送られます。考えの途中は送られません。返事は素の文 (LINE は Markdown を表示しません) で、
   呼んだ発言を引用して返します。
@@ -30,7 +40,11 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
   上限があります。[通知・上限・知らせ](docs/reference/notices-and-limits.md)を見てください。
 - **頼まれたら消す。** 自分の発言を「消して」と頼むか送信取消すると、グループの記録と会話から
   消え、その発言を除いた要約から会話が新しく始まります。決めた日数 (既定 30 日) より古い記録も
-  消えます (今の会話と要約は除く)。[発言を消す](docs/reference/deleting.md)を見てください。
+  消えます (今の会話と要約は除く)。要約がその発言を引用していたら、引用を除いて書き直します。
+  [発言を消す](docs/reference/deleting.md)を見てください。
+- **昔のトーク履歴を取り込める。** `line-group-agent import-history` で、LINE の「トーク履歴を
+  送信」で作った text の file をグループの記録に入れます。
+  [昔のトーク履歴の取り込み](docs/reference/importing-history.md)を見てください。
 - **止まった時は知らせる。** Claude API の失敗が続いた時・今月の額が上限の 80% を超えた時・
   LINE への送信が失敗した時に、短い push の通知が届きます。
 - **月の予算の中で動く。** 毎回の額を API の usage から数えます。API を呼ぶ前に
@@ -49,8 +63,10 @@ LINE グループ ──▶ LINE Platform ──https──▶ あなたの HTTP
                                                                      │  3. メンションならグループの会話を続けて Claude API へ ──▶ web 検索 / web fetch
                                                                      │                               ├─▶ search_history (ローカルの記録)
                                                                      │                               ├─▶ delete_messages (呼んだ人自身の発言・bot の返事)
-                                                                     │                               └─▶ show_cards (候補をカードで)
-                                                                     └─ 4. reply (文のあとにカード。token が切れていたら push)
+                                                                     │                               ├─▶ show_cards (候補をカードで)
+                                                                     │                               └─▶ 投票・予定表・split_bill・send_location・suggest_replies
+                                                                     └─ 4. reply (文・カード・投票や場所・クイックリプライ。token が切れていたら push)
+                                                                     (投票カードのボタンは postback で届き、返事なしで数える)
 ```
 
 - server は loopback でだけ待ち受けます。LINE から届く HTTPS の入口 (reverse proxy・
@@ -142,7 +158,11 @@ agent は使った額を数えますが、料金は調べません。料金の�
 - 見積もりは守りで、請求ではありません。Claude Console でも key の workspace に額の上限を
   置いてください。
 - 返事は LINE の reply token で送り、無料です。model の答えが token の寿命 (約 1 分) より
-  遅れた時は push で送り直し、これはアカウントの月の送信数に数えられます。
+  遅れた時は push で送り直し、これはアカウントの月の送信数に数えられます。カード・投票・
+  地図のメッセージ・クイックリプライは文と同じ 1 回の呼び出しで送ります。投票の 1 票と
+  新しい人への一言は、送信数を使いません。
+- model に渡した写真は、ほかの入力と同じように token を使います (写真は先に
+  `max_image_edge_pixels` まで縮め、1 回のメンションに付くのは `max_images_per_turn` 枚まで)。
 - 答えに web の作業が要る時は、先に短い「待ってね」の文を reply token で送り、答えは push で
   送ります。LINE が今月の送信の残りを十分に返す間だけ (`wait_min_push_left`) 送ります。
 
@@ -152,7 +172,10 @@ agent は使った額を数えますが、料金は調べません。料金の�
 
 | Path | 中身 |
 |---|---|
-| `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、bot が送った返事 (`from_bot` の印付き。カードを付けた返事は、末尾にその名前を並べた 1 行が付く)。1 行 1 発言。追記される。消した発言と `retention_days` より古い発言は取り除かれる |
+| `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、写真 (`[写真]`)・位置 (`[位置]`) ごとの 1 行と、bot が送った返事 (`from_bot` の印付き。カード・投票・場所を付けた返事は、末尾にその名前を並べた行が付く)。1 行 1 発言。追記される。消した発言と `retention_days` より古い発言は取り除かれる |
+| `groups/<groupId>/images/` | グループの写真 (model に渡せる大きさに縮めた物)。発言と一緒に消える |
+| `groups/<groupId>/polls.json` | グループの投票と、誰が何に票を入れたか |
+| `groups/<groupId>/itinerary.json` | グループの旅の予定表と、前の 5 つの版 |
 | `conversations/g-<groupId>.jsonl` | グループの続いている会話: model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
 | `groups/<groupId>/journal/<date>-gen<N>.md` | グループの会話の N 本目を入れ替えた時に書いた要約。消されない |
 | `groups/<groupId>/spend.json` | グループの今月の額 (`spend.json` と同じ形) |
