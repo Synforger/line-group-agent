@@ -99,6 +99,18 @@ def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
     return False
 
 
+def strip_call_name(text: str, names: tuple[str, ...]) -> str:
+    """Return `text` without a call name at its start or its end (any case), with the
+    spaces and punctuation next to it. Text that holds no call name is returned as is."""
+    body = text.strip(_EDGE)
+    for name in names:
+        if body.casefold().startswith(name.casefold()):
+            return body[len(name) :].strip(_EDGE)
+        if body.casefold().endswith(name.casefold()):
+            return body[: -len(name)].strip(_EDGE)
+    return text
+
+
 def _runs_on(neighbour: str) -> bool:
     return bool(neighbour) and bool(re.match(r"[a-z0-9]", neighbour))
 

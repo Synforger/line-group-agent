@@ -27,6 +27,8 @@ from line_group_agent.events.group_watcher import GroupWatcher
 from line_group_agent.events.mention_limiter import MentionLimiter
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
+from line_group_agent.itinerary.itinerary_book import ItineraryBook
+from line_group_agent.itinerary.itinerary_tools import itinerary_tools
 from line_group_agent.line_api.line_client import LineClient
 from line_group_agent.line_api.push_quota import PushQuota
 from line_group_agent.polls.poll_book import PollBook
@@ -71,7 +73,8 @@ def build_app(config: AgentConfig) -> FastAPI:
     line = LineClient(secrets.line_channel_access_token)
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
     polls = PollBook(config.state_dir, clock)
-    client_tools = ClientTools(poll_tools(polls))
+    itineraries = ItineraryBook(config.state_dir, clock)
+    client_tools = ClientTools([*poll_tools(polls), *itinerary_tools(itineraries)])
     caller = ModelCaller(
         config,
         client,
@@ -106,6 +109,7 @@ def build_app(config: AgentConfig) -> FastAPI:
             intro=intro,
             help=_read_text_file(config.help_file, "help_file"),
             help_keywords=config.help_keywords,
+            itinerary_keywords=config.itinerary_keywords,
         ),
         limiter=MentionLimiter(config.max_mentions_per_user_per_hour),
         wait_notice=WaitNotice(
@@ -116,6 +120,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         ),
         deleter=deleter,
         postbacks=PostbackHandler(polls),
+        itineraries=itineraries,
         notifier=notifier,
     )
     return create_app(

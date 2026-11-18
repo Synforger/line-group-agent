@@ -9,9 +9,10 @@ mention sees what the bot said.
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
-A message a member takes back (unsend) is deleted from the records. When the bot joins
-an allowed group it introduces itself with a fixed text. A button press on a poll card
-(a postback) is counted as a vote and not answered.
+A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
+without the model. A message a member takes back (unsend) is deleted from the records.
+When the bot joins an allowed group it introduces itself with a fixed text. A button press
+on a poll card (a postback) is counted as a vote and not answered.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -57,12 +58,14 @@ from line_group_agent.events.event_fields import (
     local_time_of,
     postback_of,
     quote_token_of,
+    strip_call_name,
     unsent_message_id_of,
     webhook_event_id_of,
 )
 from line_group_agent.events.mention_limiter import MentionLimiter, MentionVerdict
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
+from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.line_api.line_client import LineApiError, LineClient
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
@@ -100,6 +103,7 @@ class NoticeTexts:
     intro: str = ""
     help: str = ""
     help_keywords: tuple[str, ...] = ()
+    itinerary_keywords: tuple[str, ...] = ()
 
 
 class EventDispatcher:
@@ -122,6 +126,7 @@ class EventDispatcher:
         wait_notice: WaitNotice | None = None,
         deleter: MessageDeleter | None = None,
         postbacks: PostbackHandler | None = None,
+        itineraries: ItineraryBook | None = None,
         notifier: AlertNotifier | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -135,6 +140,7 @@ class EventDispatcher:
         self.wait_notice = wait_notice
         self.deleter = deleter
         self.postbacks = postbacks
+        self.itineraries = itineraries
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.call_names = call_names
@@ -225,6 +231,8 @@ class EventDispatcher:
         if self._asks_for_help(event):
             await self._send_help(group_id, event)
             return
+        if await self._send_itinerary(group_id, event):
+            return
         await self._answer_mention(group_id, event, record)
 
     async def _answer_mention(
@@ -273,10 +281,34 @@ class EventDispatcher:
 
     def _asks_for_help(self, event: dict[str, Any]) -> bool:
         """Whether the mention, with the mention text removed, is only a help keyword."""
-        if not self.texts.help or not self.texts.help_keywords:
+        return bool(self.texts.help) and self._is_only_keyword(event, self.texts.help_keywords)
+
+    def _is_only_keyword(self, event: dict[str, Any], keywords: tuple[str, ...]) -> bool:
+        """Whether the message, without the mention or the call name, is only a keyword."""
+        if not keywords:
             return False
-        rest = _without_mentions(event).strip().strip("?？!！。、 ").casefold()
-        return any(rest == keyword.casefold() for keyword in self.texts.help_keywords)
+        text = strip_call_name(_without_mentions(event), self.call_names)
+        rest = text.strip().strip("?？!！。、 ").casefold()
+        return any(rest == keyword.casefold() for keyword in keywords)
+
+    async def _send_itinerary(self, group_id: str, event: dict[str, Any]) -> bool:
+        """Send the saved itinerary as it is when the mention is only the itinerary keyword;
+        return whether it was sent (False when no itinerary is saved, so the model answers)."""
+        if self.itineraries is None or not self._is_only_keyword(
+            event, self.texts.itinerary_keywords
+        ):
+            return False
+        itinerary = self.itineraries.get(group_id)
+        if itinerary is None:
+            return False
+        logger.info("answer: sent the saved itinerary")
+        await self._sender.send(
+            group_id,
+            event.get("replyToken"),
+            Answer(itinerary.text, record=False),
+            quote_token=quote_token_of(event),
+        )
+        return True
 
     async def _send_help(self, group_id: str, event: dict[str, Any]) -> None:
         # The list is sent as written, without calling the model (no cost). It is not

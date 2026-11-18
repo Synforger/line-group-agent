@@ -61,6 +61,15 @@ close). The newest 50 polls are kept:
 {"last_number": 2, "polls": [{"id": "p2", "kind": "choice", "question": "Where?", "multiple": false, "is_closed": false, "created_at": "2026-11-18T12:00:00+09:00", "options": [{"label": "Kyoto", "voters": [{"user_id": "U0123…", "name": "Aki"}]}, {"label": "Osaka", "voters": []}]}]}
 ```
 
+## `groups/<groupId>/itinerary.json`
+
+The group's [trip itinerary](group-tools.md#trip-itinerary), replaced whole at each update.
+`versions` holds the texts it replaced, newest first, at most five:
+
+```json
+{"text": "1日目 (11/23)\n…", "saved_at": "2026-11-18T12:00:00+09:00", "versions": [{"text": "…", "saved_at": "…"}]}
+```
+
 ## `groups/<groupId>/spend.json`
 
 The group's month, in the same form as `spend.json` below. Its `limit` is the overall limit

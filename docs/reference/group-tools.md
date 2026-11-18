@@ -35,3 +35,18 @@ with `[日程]`.
 
 The cards use plain buttons; LINE's date picker is not used, because LINE does not say it is
 available in group chats.
+
+## Trip itinerary
+
+The group has one itinerary, kept as plain text. A member can tell the bot what to put in it
+("add dinner at 7 on day two") and ask what is in it ("what is the plan?"); the bot reads the
+saved text, writes the whole new text and saves it. The text uses one heading line per day,
+like `1日目 (11/23)`, and may be up to 4,000 characters (what one LINE message holds).
+
+- Every update replaces the whole text and keeps the version it replaced, the last five of
+  them, in the group's `itinerary.json`. Putting an older version back is done by hand there
+- A mention that holds only an itinerary keyword (`itinerary_keywords` in the
+  [configuration](config.md), `itinerary` by default; the mention, a call name and
+  punctuation around it are ignored) gets the saved itinerary exactly as it is, without the
+  model, so it costs nothing. That reply is not recorded as a turn. When no itinerary is saved
+  yet, the model answers as for any mention

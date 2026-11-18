@@ -26,6 +26,7 @@ DEFAULT_MAX_TOOL_ROUNDS = 4
 DEFAULT_HISTORY_SEARCH_LIMIT = 20
 DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 DEFAULT_HELP_KEYWORDS = ("help",)
+DEFAULT_ITINERARY_KEYWORDS = ("itinerary",)
 DEFAULT_WEB_SEARCH_TYPE = "web_search_20250305"
 DEFAULT_WEB_SEARCH_MAX_USES = 3
 DEFAULT_WEB_FETCH_TYPE = "web_fetch_20250910"
@@ -132,6 +133,7 @@ class AgentConfig:
     intro_file: Path | None
     help_file: Path | None
     help_keywords: tuple[str, ...]
+    itinerary_keywords: tuple[str, ...]
     call_names: tuple[str, ...]
     error_text: str
     wait_text: str
@@ -216,6 +218,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         intro_file=_optional_path(raw, "intro_file", base_dir, None),
         help_file=_optional_path(raw, "help_file", base_dir, None),
         help_keywords=_string_tuple(raw, "help_keywords", DEFAULT_HELP_KEYWORDS),
+        itinerary_keywords=_string_tuple(raw, "itinerary_keywords", DEFAULT_ITINERARY_KEYWORDS),
         call_names=_string_tuple(raw, "call_names", ()),
         error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),

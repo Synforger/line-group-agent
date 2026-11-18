@@ -197,3 +197,14 @@ def test_the_counts_cannot_be_below_their_minimum(tmp_path: Path, key: str) -> N
     if key != "wait_min_push_left":
         with pytest.raises(ConfigError, match=key):
             make_config(tmp_path, **{key: 0})
+
+
+def test_the_itinerary_keywords_default_to_one_word_and_can_be_listed(tmp_path: Path) -> None:
+    assert make_config(tmp_path).itinerary_keywords == ("itinerary",)
+    config = make_config(tmp_path, itinerary_keywords=[" しおり ", "plan"])
+    assert config.itinerary_keywords == ("しおり", "plan")
+
+
+def test_an_itinerary_keyword_must_be_a_non_empty_string(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="itinerary_keywords"):
+        make_config(tmp_path, itinerary_keywords=["ok", ""])

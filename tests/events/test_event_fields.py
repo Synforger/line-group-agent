@@ -10,6 +10,7 @@ from line_group_agent.events.event_fields import (
     local_time_of,
     postback_of,
     quote_token_of,
+    strip_call_name,
     unsent_message_id_of,
     webhook_event_id_of,
 )
@@ -158,3 +159,10 @@ def test_the_webhook_event_id_is_read_when_there_is_one() -> None:
     assert webhook_event_id_of({"webhookEventId": "01H"}) == "01H"
     assert webhook_event_id_of({"webhookEventId": ""}) is None
     assert webhook_event_id_of({}) is None
+
+
+def test_a_call_name_at_either_end_is_removed_with_the_punctuation_next_to_it() -> None:
+    assert strip_call_name("Sora, itinerary", ("Sora",)) == "itinerary"
+    assert strip_call_name("itinerary、 SORA!", ("sora",)) == "itinerary"
+    assert strip_call_name("itinerary", ("Sora",)) == "itinerary"
+    assert strip_call_name("itinerary", ()) == "itinerary"
