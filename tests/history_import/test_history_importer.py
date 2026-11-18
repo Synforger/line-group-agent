@@ -45,7 +45,8 @@ def test_a_message_the_record_already_holds_is_not_added_even_with_seconds_and_a
     tmp_path: Path,
 ) -> None:
     log = GroupLog(tmp_path)
-    live = GroupMessage("2026-09-01T10:00:42+09:00", "real-1", "U1", "Aki", "first")
+    live_time = datetime(2026, 9, 1, 10, 0, 42).astimezone().isoformat(timespec="seconds")
+    live = GroupMessage(live_time, "real-1", "U1", "Aki", "first")
     log.add(GROUP, live)
     result = HistoryImporter(log).import_text(GROUP, HISTORY)
     assert result.existing_count == 1 and result.added_count == 2
