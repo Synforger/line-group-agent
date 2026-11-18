@@ -44,7 +44,7 @@ def test_a_web_tool_set_to_null_is_off(tmp_path: Path) -> None:
     assert config.web_fetch is None
 
 
-@pytest.mark.parametrize("key", ["persona_file", "state_dir", "tab_name", "prices_usd", "budget"])
+@pytest.mark.parametrize("key", ["persona_file", "state_dir", "prices_usd", "budget"])
 def test_required_settings_are_required(tmp_path: Path, key: str) -> None:
     raw = raw_config(tmp_path)
     del raw[key]
@@ -59,10 +59,37 @@ def test_prices_have_no_default(tmp_path: Path) -> None:
         parse_config(raw, tmp_path)
 
 
-@pytest.mark.parametrize("name", ["Group", "a b", "../x", ""])
-def test_tab_name_is_checked(tmp_path: Path, name: str) -> None:
-    with pytest.raises(ConfigError):
-        make_config(tmp_path, tab_name=name)
+def test_an_old_tab_name_setting_is_accepted_and_ignored(tmp_path: Path) -> None:
+    config = make_config(tmp_path, tab_name="group-trip")
+    assert not hasattr(config, "tab_name")
+
+
+def test_the_settings_and_tab_files_default_to_the_config_folder_and_the_state_folder(
+    tmp_path: Path,
+) -> None:
+    config = make_config(tmp_path)
+    assert config.settings_file == tmp_path / "settings.json"
+    assert config.tabs_file == tmp_path / "state" / "tabs.json"
+
+
+def test_the_settings_and_tab_files_can_be_named(tmp_path: Path) -> None:
+    config = make_config(tmp_path, settings_file="ui/s.json", tabs_file="/abs/tabs.json")
+    assert config.settings_file == tmp_path / "ui" / "s.json"
+    assert config.tabs_file == Path("/abs/tabs.json")
+
+
+def test_the_conversation_settings_have_defaults(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    assert config.cache_ttl == "1h"
+    assert config.max_catch_up_messages == 200
+    assert config.summary_max_tokens == 2048
+    assert config.patrol_interval_seconds == 600
+
+
+def test_the_cache_ttl_is_five_minutes_or_one_hour(tmp_path: Path) -> None:
+    assert make_config(tmp_path, cache_ttl="5m").cache_ttl == "5m"
+    with pytest.raises(ConfigError, match="cache_ttl"):
+        make_config(tmp_path, cache_ttl="2h")
 
 
 def test_a_wrong_kind_is_refused(tmp_path: Path) -> None:
@@ -75,7 +102,7 @@ def test_a_wrong_kind_is_refused(tmp_path: Path) -> None:
 def test_load_config_reads_a_file(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
     path.write_text(json.dumps(raw_config(tmp_path)))
-    assert load_config(path).tab_name == "group-test"
+    assert load_config(path).state_dir == tmp_path / "state"
 
 
 def test_load_config_names_a_broken_file(tmp_path: Path) -> None:

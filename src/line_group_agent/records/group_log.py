@@ -52,6 +52,46 @@ class GroupLog:
         messages = [m for m in self._load(group_id) if m.message_id != exclude_message_id]
         return messages[-count:]
 
+    def list_since_turn(
+        self,
+        group_id: str,
+        limit: int,
+        *,
+        after_message_id: str | None,
+        exclude_message_id: str | None = None,
+    ) -> list[GroupMessage]:
+        """Return what the group said since the bot's last turn, oldest first.
+
+        The last turn ends at the later of the bot's last reply and the message
+        `after_message_id` (the mention the bot last took up, when known). The bot's
+        own replies are left out, and at most the last `limit` messages are returned.
+        """
+        messages = self._load(group_id)
+        cut = -1
+        for index, message in enumerate(messages):
+            if message.from_bot or message.message_id == after_message_id:
+                cut = index
+        since = [
+            m for m in messages[cut + 1 :] if not m.from_bot and m.message_id != exclude_message_id
+        ]
+        return since[-limit:] if limit > 0 else []
+
+    def last_message_time(self, group_id: str) -> str | None:
+        """Return the time of the group's latest recorded message, or None."""
+        messages = self._load(group_id)
+        return messages[-1].time if messages else None
+
+    def list_group_ids(self) -> list[str]:
+        """Return the ids of the groups that have a record, in name order."""
+        root = self.state_dir / "groups"
+        if not root.is_dir():
+            return []
+        return sorted(
+            folder.name
+            for folder in root.iterdir()
+            if GROUP_ID_PATTERN.match(folder.name) and (folder / "messages.jsonl").exists()
+        )
+
     def search(self, group_id: str, query: str, limit: int) -> list[GroupMessage]:
         """Return messages whose text contains `query` (any case), newest first."""
         needle = query.strip().casefold()

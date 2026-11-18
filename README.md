@@ -13,6 +13,10 @@ short answer. It stays quiet otherwise.
   text that happens to contain the bot's name is not a mention.
 - **Remembers the group.** Every text message of an allowed group is appended to
   a local record, so "what did we say about the hotel?" can be answered later.
+- **Keeps one conversation per group going.** Each mention continues the group's
+  running conversation with what was said since the last one, so the bot builds on
+  its own earlier answers. When the conversation fills up, the bot summarizes it and
+  carries on from the summary; see [The running conversation](docs/reference/conversation.md).
 - **Looks things up.** Web search and web page reading (server-side tools of the
   Claude API) plus a search over the group's own record.
 - **Shows candidates as cards.** When it lists two or more candidates, it can send
@@ -23,8 +27,9 @@ short answer. It stays quiet otherwise.
   `<reply>…</reply>` is sent to the group; its working notes never are.
 - **Stays within a monthly budget.** Each answer's cost is counted from the API's
   usage figures. Before calling the API, the agent checks that this month's spend
-  plus the most one answer can cost stays within your limit; if not, it replies
-  with a fixed line instead.
+  plus the most one answer can cost stays within your limit, both for the whole
+  agent and for the group (the limit divided by the number of groups); if not, it
+  replies with a fixed line instead.
 - **Treats the group as data.** Group messages are handed to the model in an
   envelope and are never read as instructions; the agent has no tool that can
   book, pay or send anything outside the group.
@@ -36,7 +41,7 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │  POST /line/webhook
                                                                │  1. size cap, signature check, 200 at once
                                                                │  2. allowed group? record the message
-                                                               │  3. mentioned? ask the Claude API ──▶ web search / web fetch
+                                                               │  3. mentioned? continue the group's conversation with the Claude API ──▶ web search / web fetch
                                                                │                                  ├─▶ search_history (local record)
                                                                │                                  └─▶ show_cards (candidates as cards)
                                                                └─ 4. reply, text then cards (or push if the reply token expired)
@@ -115,7 +120,7 @@ prices of Claude Haiku 5.5 as published on 2026-11-18:
 |---|---|
 | Input / output, prompts up to 100K tokens | $0.10 / $0.50 per million tokens |
 | Input / output, prompts over 100K tokens | $0.50 / $2.50 per million tokens |
-| Cache write (5 minutes) / cache read | $0.125 / $0.01 per million tokens |
+| Cache write (5 minutes / 1 hour) / cache read | $0.125 / $0.20 / $0.01 per million tokens |
 | Web search | $10 per 1,000 searches |
 | Web fetch | no charge beyond the tokens it adds |
 
@@ -134,6 +139,13 @@ How the budget is kept:
   every web search `max_uses` allows. If this month's spend plus that estimate
   would pass the limit, it does not call the API and replies with
   `budget.exhausted_text`.
+- The conversation is sent again at each mention, so the API's prompt cache matters:
+  a cache read costs a tenth of normal input. `cache_ttl` picks how long the cache
+  lives. The default `1h` costs twice the input price to write (against 1.25 times
+  for `5m`) and keeps a group that mentions the bot every few minutes or hours on
+  cheap reads; `5m` is cheaper to write if mentions come in bursts.
+- Each group may spend the monthly limit divided by the number of groups, and the
+  request that summarizes a full conversation counts for its group.
 - The estimate is a guard, not a bill. Also set a spend limit on the API key's
   workspace in the Claude Console.
 - A reply uses LINE's reply token and is free. When the model takes longer than
@@ -148,8 +160,13 @@ All under `state_dir`:
 | Path | What |
 |---|---|
 | `groups/<groupId>/messages.jsonl` | Every text message of the group and every reply the bot sent (marked `from_bot`; a reply that carried cards ends with a line naming them), one JSON object per line. Append only |
-| `conversations/<tab_name>.jsonl` | What was sent to the model and what it answered, one row per line, for a chat client to show read-only |
-| `spend.json` | This month's spend: `{"month", "spent", "limit", "currency", "updated_at"}`, rewritten whole each time |
+| `conversations/g-<groupId>.jsonl` | The group's running conversation: what was sent to the model and what it answered, one row per line, for a chat client to show read-only |
+| `groups/<groupId>/journal/<date>-gen<N>.md` | The summary written when the group's conversation number `N` was rolled over |
+| `groups/<groupId>/spend.json` | The group's month, in the form of `spend.json` |
+| `spend.json` | This month's spend of the whole agent: `{"month", "spent", "limit", "currency", "updated_at"}`, rewritten whole each time |
+| `tabs.json` | The groups with their context amount, spend and generation, for a chat client (path: `tabs_file`) |
+
+The settings file (`settings_file`; example in [`configs/settings.example.json`](configs/settings.example.json)) lets a settings screen change the monthly budget, the context window and the rollover thresholds without a restart.
 
 Formats are in [`docs/reference/files.md`](docs/reference/files.md).
 

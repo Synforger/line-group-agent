@@ -186,3 +186,16 @@ async def test_a_failed_leave_raises_with_the_status() -> None:
     with pytest.raises(LineApiError) as raised:
         await line.leave_group("Cg")
     assert raised.value.status == 403
+
+
+async def test_group_name_is_read_from_the_group_summary() -> None:
+    line, seen = client_answering(200, {"groupId": "Cg", "groupName": "Trip friends"})
+    assert await line.get_group_name("Cg") == "Trip friends"
+    assert seen[0].method == "GET" and seen[0].url.path == "/v2/bot/group/Cg/summary"
+
+
+async def test_group_name_is_none_when_line_does_not_give_it() -> None:
+    line, _ = client_answering(403)
+    assert await line.get_group_name("Cg") is None
+    line, _ = client_answering(200, {"groupId": "Cg"})
+    assert await line.get_group_name("Cg") is None

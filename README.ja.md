@@ -12,6 +12,10 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
   拾います。本文に bot の名前が書いてあるだけでは反応しません。
 - **グループの話を覚えている。** 許したグループの text の発言は全部ローカルの記録に追記
   するので、「ホテルの話どうなったっけ」に後から答えられます。
+- **グループごとに 1 本の会話を続ける。** メンションのたびに、前の自分の番からのグループの
+  発言を足して、そのグループの会話を続けます。bot は自分の前の答えを踏まえて話せます。
+  会話が長くなったら要約を作り、要約から続けます。
+  [続いている会話](docs/reference/conversation.md)を見てください。
 - **調べて答える。** web 検索と web ページの読み込み (Claude API の server 側の道具) と、
   グループ自身の記録の検索。
 - **候補をカードで見せる。** 候補を 2 件以上並べる時は、横にスワイプするカードの束
@@ -21,8 +25,8 @@ line-group-agent は LINE 公式アカウントの裏で動く小さな server �
 - **送るのは決めた所だけ。** model が `<reply>…</reply>` の中に書いた文だけがグループに
   送られます。考えの途中は送られません。
 - **月の予算の中で動く。** 毎回の額を API の usage から数えます。API を呼ぶ前に
-  「今月の額 + 1 回の最大の見積もり」が上限を超えないか確かめ、超えるなら決まった文だけを
-  返します。
+  「今月の額 + 1 回の最大の見積もり」が上限を超えないか、全体とそのグループ (上限を
+  グループの数で割った額) の両方で確かめ、超えるなら決まった文だけを返します。
 - **グループの発言はデータとして扱う。** 発言は封筒に入れて model に渡し、指示としては
   読ませません。予約・支払い・グループの外へ送る道具は持っていません。
 
@@ -33,7 +37,7 @@ LINE グループ ──▶ LINE Platform ──https──▶ あなたの HTTP
                                                                      │  POST /line/webhook
                                                                      │  1. 大きさの上限・署名の確認・すぐ 200
                                                                      │  2. 許したグループなら発言を記録
-                                                                     │  3. メンションなら Claude API へ ──▶ web 検索 / web fetch
+                                                                     │  3. メンションならグループの会話を続けて Claude API へ ──▶ web 検索 / web fetch
                                                                      │                               ├─▶ search_history (ローカルの記録)
                                                                      │                               └─▶ show_cards (候補をカードで)
                                                                      └─ 4. reply (文のあとにカード。token が切れていたら push)
@@ -103,7 +107,7 @@ agent は使った額を数えますが、料金は調べません。料金の�
 |---|---|
 | 入力 / 出力 (prompt が 10 万 token 以下) | 100 万 token あたり $0.10 / $0.50 |
 | 入力 / 出力 (prompt が 10 万 token 超) | 100 万 token あたり $0.50 / $2.50 |
-| cache の書き込み (5 分) / 読み出し | 100 万 token あたり $0.125 / $0.01 |
+| cache の書き込み (5 分 / 1 時間) / 読み出し | 100 万 token あたり $0.125 / $0.20 / $0.01 |
 | web 検索 | 1,000 回あたり $10 |
 | web fetch | 増えた token 以外は無料 |
 
@@ -119,6 +123,12 @@ agent は使った額を数えますが、料金は調べません。料金の�
   (`max_tool_rounds + 1` 回) が、それぞれ `estimated_input_tokens_per_request` の prompt と
   `max_tokens` いっぱいの答えと、`max_uses` の分の web 検索を使った場合。今月の額に足して
   上限を超えるなら API を呼ばず、`budget.exhausted_text` を返します。
+- 会話はメンションのたびに送り直すので、API の prompt cache が効きます。cache の読み出しは
+  通常の入力の 10 分の 1 です。`cache_ttl` で cache の寿命を選びます。既定の `1h` は書き込みが
+  入力の 2 倍 (`5m` は 1.25 倍) ですが、数分〜数時間おきに呼ばれるグループでも安い読み出しで
+  続けられます。呼ばれる時が集中するなら `5m` の方が書き込みは安くなります。
+- グループごとの上限は月の上限をグループの数で割った額で、満杯の会話を要約する要求の額も
+  そのグループに数えます。
 - 見積もりは守りで、請求ではありません。Claude Console でも key の workspace に額の上限を
   置いてください。
 - 返事は LINE の reply token で送り、無料です。model の答えが token の寿命 (約 1 分) より
@@ -131,8 +141,14 @@ agent は使った額を数えますが、料金は調べません。料金の�
 | Path | 中身 |
 |---|---|
 | `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、bot が送った返事 (`from_bot` の印付き。カードを付けた返事は、末尾にその名前を並べた 1 行が付く)。1 行 1 発言。追記だけ |
-| `conversations/<tab_name>.jsonl` | model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
-| `spend.json` | 今月の額: `{"month", "spent", "limit", "currency", "updated_at"}`。毎回全体を書き直す |
+| `conversations/g-<groupId>.jsonl` | グループの続いている会話: model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
+| `groups/<groupId>/journal/<date>-gen<N>.md` | グループの会話の N 本目を入れ替えた時に書いた要約 |
+| `groups/<groupId>/spend.json` | グループの今月の額 (`spend.json` と同じ形) |
+| `spend.json` | agent 全体の今月の額: `{"month", "spent", "limit", "currency", "updated_at"}`。毎回全体を書き直す |
+| `tabs.json` | グループの一覧と、文脈の量・額・世代。chat の client が読む (path は `tabs_file`) |
+
+設定 file (`settings_file`・例は [`configs/settings.example.json`](configs/settings.example.json)) で、
+月の予算・文脈の窓・入れ替えの閾値を、再起動せずに設定画面から変えられます。
 
 形は [`docs/reference/files.md`](docs/reference/files.md) にあります。
 

@@ -16,6 +16,9 @@ membership is asked again after an hour, and the bot leaves once the member is g
 LINE may send an event again after a failed delivery (webhook redelivery). A message
 whose id is already in the group's record is skipped, so it is recorded and answered
 once. A redelivered mention older than the answer window is recorded but not answered.
+
+The group watcher is told of each recorded message and after each answer, so it can
+register the group, roll a full conversation over and keep the tab list current.
 """
 
 from __future__ import annotations
@@ -50,6 +53,14 @@ DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 MEMBERSHIP_RECHECK_SECONDS = 3600
 
 
+class GroupObserver(Protocol):
+    """What the dispatcher tells the group watcher."""
+
+    async def note_message(self, group_id: str, message: GroupMessage) -> None: ...
+
+    async def after_answer(self, group_id: str) -> None: ...
+
+
 class MentionAnswerer(Protocol):
     """What the dispatcher needs from the answerer."""
 
@@ -69,6 +80,7 @@ class EventDispatcher:
         redelivered_answer_window_seconds: int = DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         required_member_user_id: str | None = None,
         allow_groups_with_required_member: bool = False,
+        observer: GroupObserver | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.allowed_group_ids = allowed_group_ids
@@ -79,6 +91,7 @@ class EventDispatcher:
         self.redelivered_answer_window_seconds = redelivered_answer_window_seconds
         self.required_member_user_id = required_member_user_id
         self.allow_groups_with_required_member = allow_groups_with_required_member
+        self.observer = observer
         self._clock = clock
         self._membership: dict[str, tuple[bool | None, float]] = {}
         self._left_groups: set[str] = set()
@@ -139,6 +152,8 @@ class EventDispatcher:
             text=message["text"],
         )
         self.group_log.add(group_id, record)
+        if self.observer is not None:
+            await self.observer.note_message(group_id, record)
 
         if not is_self_mentioned(event):
             return
@@ -146,6 +161,13 @@ class EventDispatcher:
             logger.info("answer: a redelivered mention is past the answer window; not answered")
             return
         answer = await self.answerer.answer(group_id, record)
+        try:
+            await self._deliver(group_id, event, answer)
+        finally:
+            if self.observer is not None:
+                await self.observer.after_answer(group_id)
+
+    async def _deliver(self, group_id: str, event: dict[str, Any], answer: Answer) -> None:
         if answer.text is None and not answer.cards:
             logger.info("answer: no reply to send")
             return

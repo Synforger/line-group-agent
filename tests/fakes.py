@@ -39,7 +39,6 @@ def raw_config(tmp_path: Path, **overrides: Any) -> dict[str, Any]:
         "allowed_group_ids": ["Callowed"],
         "persona_file": str(tmp_path / "persona.md"),
         "state_dir": str(tmp_path / "state"),
-        "tab_name": "group-test",
         "anthropic_api_key_file": str(tmp_path / "anthropic-api-key"),
         "line_channel_secret_file": str(tmp_path / "line-channel-secret"),
         "line_channel_access_token_file": str(tmp_path / "line-channel-access-token"),
@@ -150,8 +149,11 @@ class FakeLine:
         reply_results: list[ReplyResult] | None = None,
         push_statuses: list[int | None] | None = None,
         members: dict[str, bool | None] | None = None,
+        group_names: dict[str, str] | None = None,
     ) -> None:
         self.members = members or {}
+        self.group_names = group_names or {}
+        self.group_name_lookups = 0
         self.left_groups: list[str] = []
         self.reply_accepts = reply_accepts
         self.names = names or {}
@@ -197,6 +199,10 @@ class FakeLine:
     async def get_member_name(self, group_id: str, user_id: str) -> str | None:
         self.name_lookups += 1
         return self.names.get(user_id)
+
+    async def get_group_name(self, group_id: str) -> str | None:
+        self.group_name_lookups += 1
+        return self.group_names.get(group_id)
 
     async def is_member(self, group_id: str, user_id: str) -> bool | None:
         return self.members.get(user_id, False)

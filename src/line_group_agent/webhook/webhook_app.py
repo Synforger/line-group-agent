@@ -23,6 +23,14 @@ WEBHOOK_PATH = "/line/webhook"
 SIGNATURE_HEADER = "x-line-signature"
 
 
+class Background(Protocol):
+    """A task that runs while the app is up (the patrol)."""
+
+    def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
 class EventSink(Protocol):
     """Where verified events go (the event dispatcher)."""
 
@@ -39,15 +47,21 @@ def create_app(
     sink: EventSink,
     *,
     on_close: list[Callable[[], Awaitable[None]]] | None = None,
+    background: list[Background] | None = None,
 ) -> FastAPI:
-    """Return the web app. `on_close` runs at shutdown (to close API clients)."""
+    """Return the web app. `background` tasks run while it is up; `on_close` runs at
+    shutdown (to close API clients)."""
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         sink.start()
+        for task in background or []:
+            task.start()
         try:
             yield
         finally:
+            for task in background or []:
+                await task.stop()
             await sink.stop()
             for close in on_close or []:
                 await close()

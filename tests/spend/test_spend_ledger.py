@@ -91,3 +91,12 @@ def test_an_unreadable_file_stops_start(tmp_path: Path) -> None:
     (tmp_path / "spend.json").write_text("{broken")
     with pytest.raises(SpendLedgerError):
         ledger_at(tmp_path, Clock(datetime(2026, 11, 18, tzinfo=TOKYO))).open()
+
+
+def test_the_limit_can_change_and_the_file_shows_it(tmp_path: Path) -> None:
+    ledger = ledger_at(tmp_path, Clock(datetime(2026, 11, 18, tzinfo=TOKYO)))
+    ledger.open()
+    ledger.set_limit(50.0)
+    assert read(tmp_path)["limit"] == 50.0
+    assert ledger.can_afford(50.0) and not ledger.can_afford(50.1)
+    assert ledger.figure()["limit"] == 50.0
