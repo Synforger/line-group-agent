@@ -5,6 +5,7 @@ from line_group_agent.events.event_fields import (
     group_id_of,
     is_called_by_name,
     is_external_image,
+    is_name_in_text,
     is_redelivery,
     is_self_mentioned,
     is_text_message,
@@ -192,3 +193,39 @@ def test_an_image_at_an_outside_address_is_external() -> None:
     outside = {"message": {"type": "image", "contentProvider": {"type": "external"}}}
     assert not is_external_image(line) and is_external_image(outside)
     assert not is_external_image({"message": {"type": "image"}})
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "昨日ソラに聞いたら便利だった",
+        "ソラって便利だね",
+        "ソラ、明日どこ行く?",
+        "明日どこ行く?ソラ",
+        "this is sora talking",
+        "Ask SORA, then decide",
+        "soraya and sora",
+    ],
+)
+def test_a_name_anywhere_in_the_text_is_found(text: str) -> None:
+    assert is_name_in_text(said(text), NAMES)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Soraya Live",
+        "malsora の薬",
+        "mysorax",
+        "sora2",
+        "普通の話",
+        "",
+    ],
+)
+def test_a_latin_name_inside_a_longer_word_is_not_found(text: str) -> None:
+    assert not is_name_in_text(said(text), NAMES)
+
+
+def test_no_names_or_no_text_finds_nothing() -> None:
+    assert not is_name_in_text(said("ソラ"), ())
+    assert not is_name_in_text({"type": "message", "message": {"type": "image"}}, NAMES)

@@ -2,7 +2,8 @@
 Messages API, run the history-search, show-cards, delete-messages and group tools, and
 return the reply text, the cards, the extra messages and the quick replies to send.
 
-Called by the event dispatcher for each message that mentions the bot. The
+Called by the event dispatcher for each message that mentions or calls the bot, and for a
+message that only holds its name, which the model may leave unanswered. The
 conversation record, the context amount and the money counters are kept here and in
 the objects it uses; rolling a full conversation over is the rollover's job.
 """
@@ -25,6 +26,10 @@ from line_group_agent.agent.prompt import (
     NOTHING_DELETED_RESULT,
     SEARCH_HISTORY_TOOL_NAME,
     SHOW_CARDS_TOOL_NAME,
+    STAY_SILENT_REFUSED_RESULT,
+    STAY_SILENT_RESULT,
+    STAY_SILENT_SKIPPED_RESULT,
+    STAY_SILENT_TOOL_NAME,
     build_envelope,
     build_user_content,
     extract_reply,
@@ -95,10 +100,19 @@ class Answerer:
         self.photos = photos
 
     async def answer(
-        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        self,
+        group_id: str,
+        mention: GroupMessage,
+        *,
+        on_slow: SlowNotice | None = None,
+        is_name_only: bool = False,
     ) -> Answer:
         """Return what to send for this mention; an answer with no text and no cards
         means send nothing. The cards are those of the last `show_cards` call.
+
+        With `is_name_only`, the message only holds the bot's name: the model is told it
+        may not be addressed to it, and may end the turn with `stay_silent` (nothing is
+        sent; the turn stays in the conversation).
 
         When the overall month or the group's month could not take the most this
         mention may cost, the API is not called and the configured budget text is
@@ -109,10 +123,14 @@ class Answerer:
         """
         conversation = self.conversations.get(group_id)
         async with conversation.lock:
-            return await self._answer(conversation, mention, on_slow)
+            return await self._answer(conversation, mention, on_slow, is_name_only)
 
     async def _answer(
-        self, conversation: GroupConversation, mention: GroupMessage, on_slow: SlowNotice | None
+        self,
+        conversation: GroupConversation,
+        mention: GroupMessage,
+        on_slow: SlowNotice | None,
+        is_name_only: bool,
     ) -> Answer:
         group_id = conversation.group_id
         budget = self.config.budget
@@ -121,7 +139,7 @@ class Answerer:
             logger.info("answer: budget left is below one mention; not calling the API")
             return Answer(budget.exhausted_text, record=False)
 
-        turn = self._user_turn(conversation, mention)
+        turn = self._user_turn(conversation, mention, is_name_only)
         messages = pair_tool_calls([*conversation.history(), {"role": "user", "content": turn}])
         conversation.add_user(turn)
         conversation.last_turn_message_id = mention.message_id
@@ -143,6 +161,11 @@ class Answerer:
             if request_index == 0 and on_slow is not None and is_slow_ahead(answer):
                 await on_slow()
             content = answer.get("content") or []
+            if is_name_only and _calls_stay_silent(content):
+                # The turn is kept whole (its call has a result) and nothing is sent.
+                conversation.add_user(_silence_results(content))
+                logger.info("answer: stayed silent for a message that only held the name")
+                return Answer(None)
             texts.extend(b["text"] for b in content if b.get("type") == "text")
             # The answer's blocks go back to the API exactly as they came (thinking
             # signatures included).
@@ -177,7 +200,7 @@ class Answerer:
         return Answer(self.config.error_text or None)
 
     def _user_turn(
-        self, conversation: GroupConversation, mention: GroupMessage
+        self, conversation: GroupConversation, mention: GroupMessage, is_name_only: bool
     ) -> str | list[dict[str, Any]]:
         """Return the user turn for this mention: the envelope, with the photos sent since
         the bot's last turn attached when photos are read."""
@@ -187,9 +210,11 @@ class Answerer:
             recent = self.group_log.list_recent(
                 group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
             )
-            envelope = build_envelope(recent, mention, summary=conversation.pending_summary)
+            envelope = build_envelope(
+                recent, mention, summary=conversation.pending_summary, is_name_only=is_name_only
+            )
         else:
-            envelope = build_envelope(since, mention)
+            envelope = build_envelope(since, mention, is_name_only=is_name_only)
         if self.photos is None:
             return envelope
         return build_user_content(envelope, self.photos.pick(group_id, since))
@@ -228,6 +253,9 @@ class Answerer:
         shown: list[Card] | None = None
         for block in content:
             if block.get("type") != "tool_use":
+                continue
+            if block.get("name") == STAY_SILENT_TOOL_NAME:
+                results.append(_tool_result(block, STAY_SILENT_REFUSED_RESULT, is_error=True))
                 continue
             if block.get("name") == SHOW_CARDS_TOOL_NAME:
                 cards = parse_cards(block.get("input"))
@@ -278,6 +306,25 @@ class Answerer:
         if deleted == 0:
             return _tool_result(block, NOTHING_DELETED_RESULT)
         return _tool_result(block, f"Deleted {deleted} message(s) from the records.")
+
+
+def _calls_stay_silent(content: list[dict[str, Any]]) -> bool:
+    return any(
+        block.get("type") == "tool_use" and block.get("name") == STAY_SILENT_TOOL_NAME
+        for block in content
+    )
+
+
+def _silence_results(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return the results of a turn that ended in `stay_silent`: the call is accepted and
+    any other call of the turn is not run."""
+    return [
+        _tool_result(block, STAY_SILENT_RESULT)
+        if block.get("name") == STAY_SILENT_TOOL_NAME
+        else _tool_result(block, STAY_SILENT_SKIPPED_RESULT, is_error=True)
+        for block in content
+        if block.get("type") == "tool_use"
+    ]
 
 
 def _tool_result(block: dict[str, Any], content: str, *, is_error: bool = False) -> dict[str, Any]:

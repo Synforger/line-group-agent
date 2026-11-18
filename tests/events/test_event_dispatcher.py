@@ -28,11 +28,18 @@ class ScriptedAnswerer:
         self.reply = reply
         self.cards = cards or []
         self.calls: list[tuple[str, GroupMessage]] = []
+        self.name_only_flags: list[bool] = []
 
     async def answer(
-        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        self,
+        group_id: str,
+        mention: GroupMessage,
+        *,
+        on_slow: SlowNotice | None = None,
+        is_name_only: bool = False,
     ) -> Answer:
         self.calls.append((group_id, mention))
+        self.name_only_flags.append(is_name_only)
         return Answer(self.reply, self.cards, record=self.record)
 
     record = True
@@ -259,7 +266,12 @@ def test_the_webhook_answers_200_before_the_answer_is_ready(tmp_path: Path) -> N
 
     class BlockedAnswerer:
         async def answer(
-            self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+            self,
+            group_id: str,
+            mention: GroupMessage,
+            *,
+            on_slow: SlowNotice | None = None,
+            is_name_only: bool = False,
         ) -> Answer:
             await release.wait()
             return Answer("late")

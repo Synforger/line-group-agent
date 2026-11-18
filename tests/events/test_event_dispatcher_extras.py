@@ -24,7 +24,12 @@ class ExtrasAnswerer:
         self.answer_to_give = answer
 
     async def answer(
-        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        self,
+        group_id: str,
+        mention: GroupMessage,
+        *,
+        on_slow: SlowNotice | None = None,
+        is_name_only: bool = False,
     ) -> Answer:
         return self.answer_to_give
 

@@ -21,6 +21,18 @@ A tool call that never got its result (for example when the round limit was reac
 answered with an error result when the conversation is sent again, so one bad turn does not
 stop the group.
 
+## A name in the middle of a message
+
+With `call_name_anywhere` on, a message that holds a call name anywhere (not a LINE mention,
+and not at its start or end, which still call the bot as before) is added as a turn too. The
+turn tells the model that the message may not be addressed to it, and gives it the tool
+`stay_silent`. When the model calls it, nothing is sent to the group and the bot's reply is
+not recorded, but the turn stays in the conversation: the bot remembers it read the message,
+and the next turn carries only what was said after it. A message that mentions the bot or
+has a name at either end is always answered; `stay_silent` is refused there. The tool is
+sent with every request while the setting is on, so the start of the request, and with it the
+prompt cache, does not change from one turn to the next.
+
 ## How full the conversation is
 
 The amount is the input, cache-read and cache-write tokens of the last answer. As a percent

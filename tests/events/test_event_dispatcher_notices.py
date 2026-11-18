@@ -34,11 +34,16 @@ class SlowAnswerer(ScriptedAnswerer):
     """An answerer that says it will take a while before it answers."""
 
     async def answer(
-        self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
+        self,
+        group_id: str,
+        mention: GroupMessage,
+        *,
+        on_slow: SlowNotice | None = None,
+        is_name_only: bool = False,
     ) -> Answer:
         if on_slow is not None:
             await on_slow()
-        return await super().answer(group_id, mention, on_slow=on_slow)
+        return await super().answer(group_id, mention, on_slow=on_slow, is_name_only=is_name_only)
 
 
 def build(
