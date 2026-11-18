@@ -151,10 +151,10 @@ def origin_slug() -> tuple[str, str] | None:
 def fill_repo_placeholders() -> None:
     slug = origin_slug()
     if slug is None:
-        print("  no origin remote: fill {{repo_full_name}} / {{repo_name}} / {{maintainer_handle}} by hand")
+        print("  no origin remote: fill Synforger/line-group-agent / line-group-agent / Synforger by hand")
         return
     owner, repo = slug
-    values = {"{{repo_full_name}}": f"{owner}/{repo}", "{{repo_name}}": repo, "{{maintainer_handle}}": owner}
+    values = {"Synforger/line-group-agent": f"{owner}/{repo}", "line-group-agent": repo, "Synforger": owner}
     for path in REPO_ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file() or path.suffix not in TEXT_SUFFIXES:
             continue

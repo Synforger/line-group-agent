@@ -23,7 +23,7 @@
 # match elsewhere in the file cannot fire by accident.
 # =============================================================================
 
-current_version: "0.1.13"
+current_version: 0.0.0
 
 targets:
   # Example (python): split _MAJOR/_MINOR/_PATCH lines in src/my_package/version.py
