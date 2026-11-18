@@ -60,7 +60,8 @@ one row per line, appended only and written one row per write:
 The summary that closed conversation number `N` of the group, written when it was rolled
 over. The file holds the summary text only. The next conversation opens with it. These
 files are never deleted by the agent, and the highest `N` tells which generation a
-conversation is in.
+conversation is in. A file is rewritten (its modification time kept) only to take out the
+content of a message that was [deleted](deleting.md#summaries-written-before-the-deletion).
 
 ## `groups/<groupId>/polls.json`
 

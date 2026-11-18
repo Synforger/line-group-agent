@@ -19,6 +19,7 @@ from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import build_system
 from line_group_agent.agent.rollover import Rollover
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.alerts.alert_notifier import AlertNotifier
 from line_group_agent.bills.bill_tools import bill_tools
 from line_group_agent.config.agent_config import AgentConfig, ConfigError, load_secrets
@@ -87,7 +88,10 @@ def build_app(config: AgentConfig) -> FastAPI:
         observer=notifier,
         extra_tools=client_tools.definitions(),
     )
-    deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
+    scrubber = SummaryScrubber(config, caller, journal, conversations, books)
+    deleter = MessageDeleter(
+        group_log, conversations, search_limit=config.history_search_limit, scrubber=scrubber
+    )
     images = ImageStore(config.state_dir)
     answerer = Answerer(
         config,
@@ -102,7 +106,14 @@ def build_app(config: AgentConfig) -> FastAPI:
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(
-        conversations, tabs, line, rollover, settings, clock, retention=retention
+        conversations,
+        tabs,
+        line,
+        rollover,
+        settings,
+        clock,
+        retention=retention,
+        scrubber=scrubber,
     )
     tabs.refresh()
     dispatcher = EventDispatcher(

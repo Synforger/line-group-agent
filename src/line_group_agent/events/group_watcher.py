@@ -3,8 +3,9 @@
 Called by the event dispatcher for each recorded message and after each answer, and by
 the patrol at an interval. It registers a group when it first speaks, looks up the
 group's name, notes when the group last spoke, rolls full or long-quiet conversations
-over (and one that had messages deleted), deletes what has outlived the retention
-period, re-reads the settings file and rewrites the tab list.
+over (and one that had messages deleted), takes deleted messages out of the summaries,
+deletes what has outlived the retention period, re-reads the settings file and rewrites
+the tab list.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 from line_group_agent.agent.rollover import Rollover
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
@@ -46,6 +48,7 @@ class GroupWatcher:
         clock: Callable[[], datetime],
         *,
         retention: RetentionSweeper | None = None,
+        scrubber: SummaryScrubber | None = None,
     ) -> None:
         self.conversations = conversations
         self.tabs = tabs
@@ -53,6 +56,7 @@ class GroupWatcher:
         self.rollover = rollover
         self.settings = settings
         self.retention = retention
+        self.scrubber = scrubber
         self._clock = clock
 
     async def note_message(self, group_id: str, message: GroupMessage) -> None:
@@ -63,9 +67,11 @@ class GroupWatcher:
         self.tabs.refresh()
 
     async def after_answer(self, group_id: str) -> None:
-        """Roll the group's conversation over if the answer filled it, then rewrite the
-        tab list."""
+        """Take deleted messages out of the summaries, roll the group's conversation over if
+        the answer filled it (or messages were deleted from it), then rewrite the tab list."""
         conversation = self.conversations.get(group_id)
+        if self.scrubber is not None:
+            await self.scrubber.scrub_pending(group_id)
         self.tabs.refresh()
         if await self.rollover.roll_over_if_full(conversation):
             self.tabs.refresh()

@@ -2,13 +2,15 @@
 
 Written when a conversation is rolled over and read at start to find the latest one, so
 the conversation can tell whether it has used it yet and which generation it is in.
-Summaries are never deleted by the agent. Lives at
+Summaries are never deleted by the agent; one is rewritten only to take out what a member
+had deleted. Lives at
 `<state_dir>/groups/<groupId>/journal/<YYYY-MM-DD>-gen<N>.md`, where N is the
 generation the summary closes. The file holds the summary text only.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -49,6 +51,22 @@ class SummaryJournal:
         except OSError:
             return None
         return (text, written_at) if text else None
+
+    def list_paths(self, group_id: str) -> list[Path]:
+        """Return every summary file of the group, oldest generation first."""
+        folder = self._folder(group_id)
+        if not folder.is_dir():
+            return []
+        found = [(int(m.group(1)), path) for path in folder.glob("*-gen*.md")
+                 if (m := GENERATION_PATTERN.search(path.name))]  # fmt: skip
+        return [path for _, path in sorted(found)]
+
+    def rewrite(self, path: Path, text: str) -> None:
+        """Replace the text of a summary file, keeping its modification time (which tells when
+        the summary was written)."""
+        stamp = path.stat().st_mtime_ns
+        write_text_atomically(path, text.strip() + "\n")
+        os.utime(path, ns=(stamp, stamp))
 
     def latest_generation(self, group_id: str) -> int | None:
         """Return the highest generation a summary file closes, or None without any."""

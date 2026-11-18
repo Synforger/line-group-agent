@@ -16,6 +16,7 @@ from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.rollover import Rollover
+from line_group_agent.agent.summary_scrubber import SummaryScrubber
 from line_group_agent.config.agent_config import AgentConfig
 from line_group_agent.config.settings_store import SettingsStore
 from line_group_agent.events.group_watcher import GroupWatcher
@@ -67,6 +68,7 @@ class World:
     retention: RetentionSweeper
     watcher: GroupWatcher
     images: ImageStore
+    scrubber: SummaryScrubber
 
     def write_settings(self, **values: Any) -> None:
         self.config.settings_file.write_text(json.dumps(values), encoding="utf-8")
@@ -98,7 +100,10 @@ def build_world(
     books = SpendBooks(overall, config.state_dir, config.budget, settings, conversations.count)
     tabs = TabsFile(config.tabs_file, conversations, books, settings, clock)
     caller = ModelCaller(config, client, "SYSTEM", books, extra_tools=client_tools.definitions())
-    deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
+    scrubber = SummaryScrubber(config, caller, journal, conversations, books)
+    deleter = MessageDeleter(
+        group_log, conversations, search_limit=config.history_search_limit, scrubber=scrubber
+    )
     images = ImageStore(config.state_dir)
     answerer = Answerer(
         config,
@@ -113,9 +118,9 @@ def build_world(
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(
-        conversations, tabs, line, rollover, settings, clock, retention=retention
+        conversations, tabs, line, rollover, settings, clock, retention=retention, scrubber=scrubber
     )
     return World(
         config, client, line, clock, settings, group_log, journal, conversations, books,
-        tabs, caller, answerer, deleter, rollover, retention, watcher, images,
+        tabs, caller, answerer, deleter, rollover, retention, watcher, images, scrubber,
     )  # fmt: skip

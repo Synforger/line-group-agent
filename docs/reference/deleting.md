@@ -23,6 +23,7 @@ When a member takes a message back in LINE (unsend), the agent deletes it the sa
 |---|---|
 | The group's record (`messages.jsonl`) | The messages are removed |
 | The conversation record (`conversations/g-<groupId>.jsonl`) | Where the messages appear in what was sent to the model, their text is replaced by `[deleted]`; a reply of the bot that was deleted is replaced the same way. The model's thinking blocks are removed from its answers |
+| The summaries (`groups/<groupId>/journal/`) | A summary that holds the text of a deleted message word for word is rewritten by the model without it, and the other parts are kept. See below |
 | The photo files (`groups/<groupId>/images/`) | The files of deleted photo messages are removed, and in the conversation record the caption and the image of a deleted photo are replaced by `[deleted]` |
 | The running conversation | Rebuilt from the changed record |
 
@@ -31,7 +32,25 @@ one), so a client that shows the record reads it again from the start.
 
 The conversation is then rolled over at once: the model writes a summary and the next
 mention opens a new conversation from it. The request for that summary tells the model
-not to write what was deleted. A summary written before the deletion is not changed.
+not to write what was deleted.
+
+### Summaries written before the deletion
+
+A summary the model wrote earlier may quote the message. Once the deletion is done (after
+the answer that made it, or at once for an unsend), the agent looks for the deleted text,
+word for word, in every summary of the group. A summary that holds it is rewritten by one
+extra request that may not use tools: the model is given the summary and the deleted texts and
+asked to take that content out and keep the rest. The summary waiting to open the next
+conversation, and the first row of a running conversation that opened with it, are changed the
+same way. The request counts against the group's budget.
+
+- If the request cannot be made (the budget is gone, or the API fails), or the rewritten text
+  still holds the deleted text, the agent replaces the text by `[deleted]` itself, so the
+  content is gone either way
+- A message of fewer than 4 characters is not looked for, since it would match anything
+- The deleted texts are kept in memory only until this is done, never in a file. If the agent is
+  stopped in between, the summaries keep what they quoted
+- What the model wrote in its own words about the message (not word for word) is not found
 
 Things to know:
 
@@ -49,7 +68,8 @@ the group record and the rows of the conversation record that are older than
 
 - the running conversation: its rows, and the group messages written since it began, are
   not deleted however old they are; they go with the conversation after it is rolled over
-- the summaries in `groups/<groupId>/journal/`, which are never deleted
+- the summaries in `groups/<groupId>/journal/`, which are never deleted by age (one is
+  only rewritten to take out a deleted message)
 
 The generation number does not depend on the rows that were deleted: it is taken from the
 journal.
