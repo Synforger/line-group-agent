@@ -82,3 +82,32 @@ async def test_without_a_recorder_photos_are_ignored_as_before(tmp_path: Path) -
     dispatcher, line, group_log, _ = setup(tmp_path, with_media=False)
     await dispatcher.handle(image_event())
     assert group_log.list_recent(ALLOWED, 10) == [] and line.content_lookups == []
+
+
+def location_event(**message: Any) -> dict[str, Any]:
+    event = image_event()
+    event["message"] = {
+        "type": "location",
+        "id": "m2",
+        "title": "Gion Inn",
+        "address": "Kyoto",
+        "latitude": 35.0036,
+        "longitude": 135.7756,
+        **message,
+    }
+    return event
+
+
+async def test_a_shared_location_is_recorded_as_a_line(tmp_path: Path) -> None:
+    dispatcher, line, group_log, answerer = setup(tmp_path, with_media=False)
+    await dispatcher.handle(location_event())
+    [recorded] = group_log.list_recent(ALLOWED, 10)
+    assert recorded.text == "[位置] Gion Inn Kyoto (35.0036, 135.7756)"
+    assert recorded.display_name == "Aki" and recorded.image_file is None
+    assert answerer.calls == [] and line.calls == []
+
+
+async def test_a_location_without_coordinates_is_dropped(tmp_path: Path) -> None:
+    dispatcher, _, group_log, _ = setup(tmp_path)
+    await dispatcher.handle(location_event(latitude="35"))
+    assert group_log.list_recent(ALLOWED, 10) == []

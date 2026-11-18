@@ -3,17 +3,20 @@
 The webhook endpoint queues events here. For an allowed group, each text message is
 recorded, and a message that mentions the bot is answered through the answerer, quoting
 the message and with a fixed text instead when no answer could be made. The reply, once
-sent, is recorded too (with a line naming any cards that went with it), so the next
-mention sees what the bot said.
+sent, is recorded too (with a line naming any cards, polls or locations that went with it),
+so the next mention sees what the bot said.
 
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
-A photo a member sends is kept (made small enough for the model) and recorded as a `[写真]`
-line. A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
-without the model. A message a member takes back (unsend) is deleted from the records.
-When the bot joins an allowed group it introduces itself with a fixed text. A button press
-on a poll card (a postback) is counted as a vote and not answered.
+A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
+without the model.
+
+Other things a member does are recorded or counted without an answer: a photo is kept (made
+small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
+a message taken back (unsend) is deleted from the records, and a button press on a poll
+card (a postback) is counted as a vote. When the bot joins an allowed group it introduces
+itself with a fixed text.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -51,6 +54,7 @@ from line_group_agent.cards.card_record import format_card_record
 from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
     IMAGE_KIND,
+    LOCATION_KIND,
     TEXT_KIND,
     age_seconds_of,
     group_id_of,
@@ -71,6 +75,7 @@ from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.line_api.line_client import LineApiError, LineClient
+from line_group_agent.media.location_record import shared_location_line
 from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
 from line_group_agent.records.group_log import GroupLog, GroupMessage
 
@@ -207,6 +212,8 @@ class EventDispatcher:
         kind = message_kind_of(event)
         if kind is None or (kind == IMAGE_KIND and self.media is None):
             return
+        if kind == LOCATION_KIND and shared_location_line(event["message"]) is None:
+            return
 
         message = event["message"]
         message_id = str(message.get("id", ""))
@@ -253,6 +260,8 @@ class EventDispatcher:
         """Return the text the record holds for a message and, for a photo, the name of the
         file it was kept in (None when it could not be kept)."""
         message = event["message"]
+        if kind == LOCATION_KIND:
+            return str(shared_location_line(message)), None
         if kind != IMAGE_KIND or self.media is None:
             return message["text"], None
         if is_external_image(event):

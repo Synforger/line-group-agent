@@ -82,3 +82,12 @@ so a member can ask "what is this?" about a photo.
 - `max_images_per_turn` set to `0` turns this off: photos are neither kept nor recorded
 - Only JPEG, PNG, GIF and WEBP photos are used. Anything else, or a photo LINE no longer gives,
   is still recorded as `[写真]`, without a file
+
+## Locations
+
+- **A place a member shares** (LINE's location message) is recorded as a line
+  `[位置] name address (latitude, longitude)`, so the bot can use it when it is next called ("find
+  a restaurant near where I just shared")
+- **A place the bot recommends** can be sent as a location message after its reply (a map
+  card that opens the map when tapped), with a real address and coordinates. One location goes
+  out per reply, and it is recorded in the same form

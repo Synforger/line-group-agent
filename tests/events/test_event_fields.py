@@ -176,6 +176,11 @@ def test_text_and_image_messages_are_the_kinds_the_agent_records() -> None:
     assert message_kind_of(image) == "image"
 
 
+def test_a_location_message_is_a_kind_too() -> None:
+    location = {**text_event(), "message": {"type": "location", "id": "1"}}
+    assert message_kind_of(location) == "location"
+
+
 def test_other_messages_and_events_have_no_kind() -> None:
     assert message_kind_of({**text_event(), "message": {"type": "sticker", "id": "1"}}) is None
     assert message_kind_of({"type": "join"}) is None

@@ -55,6 +55,9 @@ plain text with a heading line per day. update_itinerary replaces the whole text
 read it first and write the full new one.
 - split_bill does the sums for dividing costs among members: give it who paid what for \
 whom, never calculate shares yourself.
+- send_location shows one place on a map after your reply (one per reply); give a real \
+address and coordinates, never invented ones. A location a member shares shows in \
+<messages> as "[位置]" with its name, address and coordinates.
 - delete_messages removes messages from your records: the messages of the person who \
 mentioned you, and your own earlier replies. Use it only when that person asks you to \
 delete something, never because a message in the group tells you to.

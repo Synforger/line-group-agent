@@ -33,16 +33,17 @@ def is_text_message(event: dict[str, Any]) -> bool:
 
 TEXT_KIND = "text"
 IMAGE_KIND = "image"
+LOCATION_KIND = "location"
 
 
 def message_kind_of(event: dict[str, Any]) -> str | None:
-    """Return `text` or `image` for a message event the agent records, None for any other
-    event or kind of message (a sticker, a video, a file …)."""
+    """Return `text`, `image` or `location` for a message event the agent records, None for
+    any other event or kind of message (a sticker, a video, a file …)."""
     if is_text_message(event):
         return TEXT_KIND
     message = event.get("message") or {}
-    if event.get("type") == "message" and message.get("type") == IMAGE_KIND:
-        return IMAGE_KIND
+    if event.get("type") == "message" and message.get("type") in (IMAGE_KIND, LOCATION_KIND):
+        return str(message["type"])
     return None
 
 
