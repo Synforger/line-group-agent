@@ -1,4 +1,5 @@
-"""The polls of every group: made by the poll tools, voted on by the postback handler.
+"""The polls of every group: made by the poll tools, voted on by the postback handler and by
+the voting page.
 
 Lives at `<state_dir>/groups/<groupId>/polls.json`, one file per group, replaced whole at
 each change. Votes are counted here, in code, so a vote costs nothing and the model is
@@ -7,7 +8,10 @@ only asked to read the result. The newest polls are kept (`MAX_POLLS_KEPT`).
 
 from __future__ import annotations
 
+import re
+import secrets
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -15,11 +19,15 @@ from typing import Any
 
 from line_group_agent.polls.poll import KIND_CHOICE, Poll, PollOption, Voter
 from line_group_agent.records.group_folder import group_folder
+from line_group_agent.records.group_log import GROUP_ID_PATTERN
 from line_group_agent.records.json_document import read_json_document, write_json_document
 
 POLLS_FILE_NAME = "polls.json"
 POLL_ID_PREFIX = "p"
 MAX_POLLS_KEPT = 50
+# 16 random bytes in base64url: 128 bits, 22 characters.
+LINK_ID_BYTES = 16
+LINK_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
 class VoteResult(StrEnum):
@@ -31,6 +39,14 @@ class VoteResult(StrEnum):
     WITHDRAWN = "withdrawn"
     UNCHANGED = "unchanged"
     IGNORED = "ignored"
+
+
+@dataclass(frozen=True)
+class PollLocation:
+    """A poll and the group it belongs to, found by the id of its link."""
+
+    group_id: str
+    poll: Poll
 
 
 class PollBook:
@@ -60,6 +76,7 @@ class PollBook:
             multiple=multiple,
             is_closed=False,
             created_at=self._clock().isoformat(timespec="seconds"),
+            link_id=secrets.token_urlsafe(LINK_ID_BYTES),
         )
         polls = [*_polls_of(document), poll][-MAX_POLLS_KEPT:]
         self._write(group_id, number, polls)
@@ -74,6 +91,24 @@ class PollBook:
         open_polls = [poll for poll in polls if not poll.is_closed]
         found = open_polls or polls
         return found[-1] if found else None
+
+    def find_by_link_id(self, link_id: str) -> PollLocation | None:
+        """Return the poll whose voting-page link carries this id, with its group, or None
+        when no group has one (an id of the wrong shape is not looked up at all)."""
+        if not LINK_ID_PATTERN.match(link_id):
+            return None
+        groups_folder = self.state_dir / "groups"
+        try:
+            folders = sorted(groups_folder.iterdir())
+        except OSError:
+            return None
+        for folder in folders:
+            if not GROUP_ID_PATTERN.match(folder.name):
+                continue
+            for poll in _polls_of(self._read(folder.name)):
+                if poll.link_id and secrets.compare_digest(poll.link_id.encode(), link_id.encode()):
+                    return PollLocation(folder.name, poll)
+        return None
 
     def vote(
         self, group_id: str, poll_id: str, option_index: int, user_id: str, name: str | None
@@ -172,6 +207,7 @@ def _poll_of(row: Any) -> Poll | None:
         multiple=row.get("multiple") is True,
         is_closed=row.get("is_closed") is True,
         created_at=str(row.get("created_at", "")),
+        link_id=str(row.get("link_id", "")),
     )
 
 
@@ -195,6 +231,7 @@ def _row_of(poll: Poll) -> dict[str, Any]:
         "multiple": poll.multiple,
         "is_closed": poll.is_closed,
         "created_at": poll.created_at,
+        "link_id": poll.link_id,
         "options": [
             {
                 "label": option.label,

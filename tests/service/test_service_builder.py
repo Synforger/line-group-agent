@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from line_group_agent.service.service_builder import ANTHROPIC_BASE_URL, create_anthropic_client
 
@@ -97,3 +98,34 @@ def test_the_lookup_is_on_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("line_group_agent.service.service_builder.CardImageFinder", SpyFinder)
     build_with(tmp_path)
     assert SpyFinder.made == 1
+
+
+def web_client(tmp_path: Path, **overrides: object) -> TestClient:
+    from line_group_agent.service.service_builder import build_app
+    from tests.fakes import make_config
+
+    config = make_config(tmp_path, **overrides)
+    config.persona_file.write_text("You are a helper.")
+    for secret_file in (
+        config.anthropic_api_key_file,
+        config.line_channel_secret_file,
+        config.line_channel_access_token_file,
+    ):
+        secret_file.write_text("secret\n")
+    return TestClient(build_app(config))
+
+
+def test_without_a_liff_app_the_page_and_its_api_do_not_exist(tmp_path: Path) -> None:
+    client = web_client(tmp_path)
+    assert client.get("/liff/").status_code == 404
+    assert client.post("/liff/api/poll", content=b"{}").status_code == 404
+    assert client.post("/liff/api/vote", content=b"{}").status_code == 404
+    assert client.post("/line/webhook", content=b"{}").status_code == 401
+
+
+def test_with_a_liff_app_the_page_and_its_api_are_beside_the_webhook(tmp_path: Path) -> None:
+    client = web_client(tmp_path, liff_id="1234567890-AbCdEfGh", login_channel_id="1234567890")
+    page = client.get("/liff/")
+    assert page.status_code == 200 and '"1234567890-AbCdEfGh"' in page.text
+    assert client.post("/liff/api/poll", content=b"{}").status_code == 401
+    assert client.post("/line/webhook", content=b"{}").status_code == 401

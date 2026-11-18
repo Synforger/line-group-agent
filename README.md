@@ -25,8 +25,10 @@ short answer. It stays quiet otherwise.
   goes to its page. Up to 10 cards; see [Cards](docs/reference/cards.md).
 - **Runs polls and finds a date.** Ask it for a vote and it sends a card with one button
   per option; pressing a button counts a vote without the model and shows "<option> に投票" in
-  the presser's name; pressing another option switches the vote. A date poll lets each member mark every date that suits them. See
-  [Tools for the group](docs/reference/group-tools.md).
+  the presser's name; pressing another option switches the vote. A date poll lets each member mark every date that suits them.
+  With a LIFF app set up the card opens a page inside LINE instead, with bars and names and
+  nothing posted to the talk. See [Tools for the group](docs/reference/group-tools.md) and
+  [The voting page](docs/reference/liff.md).
 - **Keeps the trip itinerary and splits costs.** The group has one itinerary the bot
   reads and rewrites on request (the last five versions are kept), and a mention with only
   the word "itinerary" gets it back at no cost. Costs are split in code, exactly, with the

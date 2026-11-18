@@ -6,5 +6,6 @@
 - [cards.md](cards.md) — candidate cards: when they are sent, the limits, and what happens when LINE refuses them
 - [notices-and-limits.md](notices-and-limits.md) — what the bot says besides its answers (the wait text, the error text, the hourly limit, the introduction, the alerts to you), quoting, and plain text
 - [group-tools.md](group-tools.md) — what the bot can do for the group besides answering: polls and the rest
+- [liff.md](liff.md) — the page inside LINE where a poll is voted on: settings, setup, and what the agent checks
 - [importing-history.md](importing-history.md) — putting an old chat history into a group's record
 - [deleting.md](deleting.md) — deleting messages on request or when they are unsent, and how long the records are kept

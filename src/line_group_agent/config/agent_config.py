@@ -11,6 +11,7 @@ path in the file is taken from the folder that holds the configuration file.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,9 @@ DEFAULT_RETENTION_DAYS = 30
 DEFAULT_MAX_IMAGES_PER_TURN = 3
 DEFAULT_IMAGE_EDGE_PIXELS = 1568
 MIN_IMAGE_EDGE_PIXELS = 64
+DEFAULT_LIFF_MAX_REQUESTS_PER_USER_PER_MINUTE = 60
+DEFAULT_LIFF_MAX_BODY_BYTES = 1024
+LINE_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 class ConfigError(ValueError):
@@ -149,6 +153,10 @@ class AgentConfig:
     max_images_per_turn: int
     max_image_edge_pixels: int
     card_image_lookup: bool
+    liff_id: str | None
+    login_channel_id: str | None
+    liff_max_requests_per_user_per_minute: int
+    liff_max_body_bytes: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -180,6 +188,8 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
     group_ids = _optional(raw, "allowed_group_ids", list, [])
     if not all(isinstance(group_id, str) for group_id in group_ids):
         raise ConfigError("allowed_group_ids must be a list of strings")
+    if (raw.get("liff_id") is None) != (raw.get("login_channel_id") is None):
+        raise ConfigError("liff_id and login_channel_id must be set together")
     return AgentConfig(
         host=_optional(raw, "host", str, DEFAULT_HOST),
         port=_optional(raw, "port", int, DEFAULT_PORT),
@@ -250,6 +260,14 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             minimum=MIN_IMAGE_EDGE_PIXELS,
         ),
         card_image_lookup=_optional(raw, "card_image_lookup", bool, True),
+        liff_id=_line_id(raw, "liff_id"),
+        login_channel_id=_line_id(raw, "login_channel_id"),
+        liff_max_requests_per_user_per_minute=_at_least(
+            raw,
+            "liff_max_requests_per_user_per_minute",
+            DEFAULT_LIFF_MAX_REQUESTS_PER_USER_PER_MINUTE,
+        ),
+        liff_max_body_bytes=_at_least(raw, "liff_max_body_bytes", DEFAULT_LIFF_MAX_BODY_BYTES),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),
@@ -346,6 +364,13 @@ def _string_tuple(raw: dict[str, Any], key: str, default: tuple[str, ...]) -> tu
     if not all(isinstance(value, str) and value.strip() for value in values):
         raise ConfigError(f"{key} must be a list of non-empty strings")
     return tuple(value.strip() for value in values)
+
+
+def _line_id(raw: dict[str, Any], key: str) -> str | None:
+    value: str | None = _optional(raw, key, str, None)
+    if value is not None and not LINE_ID_PATTERN.match(value):
+        raise ConfigError(f"{key} must be letters, digits and hyphens only")
+    return value
 
 
 def _optional_path[T: Path | None](

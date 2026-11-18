@@ -214,3 +214,32 @@ def test_withdraw_vote_refuses_an_unknown_or_closed_poll(tmp_path: Path) -> None
     assert outcome.is_error and "closed" in outcome.content
     poll = book.get(GROUP, "p1")
     assert poll is not None and len(poll.options[0].voters) == 1
+
+
+def test_with_a_liff_app_the_card_opens_the_voting_page_of_the_poll_just_made(
+    tmp_path: Path,
+) -> None:
+    book = PollBook(tmp_path, lambda: NOW_FOR_TESTS)
+    tools = {tool.name: tool for tool in poll_tools(book, liff_id="1234567890-AbCdEfGh")}
+    _, output = run(tools["create_poll"], {"question": "Where?", "options": ["Kyoto", "Osaka"]})
+    poll = book.get(GROUP, "p1")
+    assert poll is not None
+    [button] = [
+        entry
+        for entry in output.extras[0].message["contents"]["body"]["contents"]
+        if entry["type"] == "button"
+    ]
+    assert button["action"]["uri"] == f"https://liff.line.me/1234567890-AbCdEfGh?p={poll.link_id}"
+    assert output.extras[0].record_line == "[投票] p1 Where? 1. Kyoto / 2. Osaka"
+
+
+def test_with_a_liff_app_a_date_poll_card_opens_the_page_too(tmp_path: Path) -> None:
+    book = PollBook(tmp_path, lambda: NOW_FOR_TESTS)
+    tools = {tool.name: tool for tool in poll_tools(book, liff_id="1234567890-AbCdEfGh")}
+    _, output = run(tools["create_date_poll"], {"title": "Day", "dates": ["Sat", "Sun"]})
+    buttons = [
+        entry["action"]["type"]
+        for entry in output.extras[0].message["contents"]["body"]["contents"]
+        if entry["type"] == "button"
+    ]
+    assert buttons == ["uri"]

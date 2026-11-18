@@ -243,3 +243,50 @@ def test_photo_settings_below_their_minimum_are_refused(
 def test_the_welcome_text_is_empty_by_default_and_trimmed(tmp_path: Path) -> None:
     assert make_config(tmp_path).welcome_text == ""
     assert make_config(tmp_path, welcome_text="  Welcome!\n").welcome_text == "Welcome!"
+
+
+def test_the_voting_page_is_off_unless_both_ids_are_given(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    assert config.liff_id is None and config.login_channel_id is None
+    assert config.liff_max_requests_per_user_per_minute == 60
+    assert config.liff_max_body_bytes == 1024
+
+
+def test_the_voting_page_settings_can_be_set(tmp_path: Path) -> None:
+    config = make_config(
+        tmp_path,
+        liff_id="1234567890-AbCdEfGh",
+        login_channel_id="1234567890",
+        liff_max_requests_per_user_per_minute=10,
+        liff_max_body_bytes=512,
+    )
+    assert config.liff_id == "1234567890-AbCdEfGh"
+    assert config.login_channel_id == "1234567890"
+    assert config.liff_max_requests_per_user_per_minute == 10
+    assert config.liff_max_body_bytes == 512
+
+
+@pytest.mark.parametrize(
+    "given",
+    [{"liff_id": "1234567890-AbCdEfGh"}, {"login_channel_id": "1234567890"}],
+)
+def test_one_of_the_two_ids_alone_is_refused(tmp_path: Path, given: dict[str, str]) -> None:
+    with pytest.raises(ConfigError, match="together"):
+        make_config(tmp_path, **given)
+
+
+@pytest.mark.parametrize("bad", ["", "a b", "1234/5", "1234?p=1", "x" * 65, "<script>"])
+def test_an_id_that_does_not_fit_in_an_address_is_refused(tmp_path: Path, bad: str) -> None:
+    with pytest.raises(ConfigError, match="liff_id"):
+        make_config(tmp_path, liff_id=bad, login_channel_id="1234567890")
+
+
+@pytest.mark.parametrize("key", ["liff_max_requests_per_user_per_minute", "liff_max_body_bytes"])
+def test_the_limits_must_be_positive(tmp_path: Path, key: str) -> None:
+    with pytest.raises(ConfigError, match=key):
+        make_config(tmp_path, **{key: 0})
+
+
+def test_the_example_configuration_names_the_voting_page_with_made_up_values() -> None:
+    raw = json.loads((Path(__file__).parents[2] / "configs" / "config.example.json").read_text())
+    assert raw["liff_id"] == "1234567890-AbCdEfGh" and raw["login_channel_id"] == "1234567890"

@@ -47,6 +47,10 @@ folder that holds the file. Settings are not taken from environment variables.
 | `max_images_per_turn` | `3` | Most photos given to the model at one mention (the newest ones the group sent since the bot's last turn). `0` turns photos off: they are neither kept nor recorded. See [Photos](group-tools.md#photos) |
 | `max_image_edge_pixels` | `1568` | A photo whose long side is longer is scaled down to this before it is kept (64 or more) |
 | `card_image_lookup` | `true` | A card the model sends without a picture is given the `og:image` (else `twitter:image`) of its own page, read with the limits in [Cards](cards.md#pictures): `https` and public addresses only, two seconds a page, the first 256 KB. `false`: no page is fetched for a card |
+| `liff_id` | none | The LIFF ID of the app that opens the [voting page](liff.md) from a poll card. Set with `login_channel_id`; without both, poll cards keep their buttons and the page does not exist |
+| `login_channel_id` | none | The channel ID of the LINE Login channel that LIFF app belongs to; its ID tokens are verified against it |
+| `liff_max_requests_per_user_per_minute` | `60` | Most requests one member may make to the voting page's API in a minute (1 or more) |
+| `liff_max_body_bytes` | `1024` | Largest request body the voting page's API accepts; larger ones get 413 (1 or more) |
 | `web_search` | `{"type": "web_search_20250305", "max_uses": 3}` | Web search tool; `null` turns it off |
 | `web_fetch` | `{"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000}` | Web page reading tool; `null` turns it off |
 | `prices_usd` | required | Prices, below |

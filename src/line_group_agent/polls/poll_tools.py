@@ -3,7 +3,8 @@ one, and take back the vote of the member who asks.
 
 A poll goes out as a card after the reply text; votes are counted by the agent without the
 model (see the postback handler). A date poll is a poll whose options are candidate dates
-and whose buttons switch "that day suits me" on and off. Called by the service builder,
+and whose buttons switch "that day suits me" on and off. With a LIFF app configured the card
+opens the voting page instead of carrying a button per option. Called by the service builder,
 which adds the tools to the client tools.
 """
 
@@ -44,8 +45,9 @@ BAD_DATES_RESULT = (
 )
 
 
-def poll_tools(book: PollBook) -> list[ClientTool]:
-    """Return the poll tools, working on `book`."""
+def poll_tools(book: PollBook, *, liff_id: str | None = None) -> list[ClientTool]:
+    """Return the poll tools, working on `book`. With `liff_id` the poll cards open the voting
+    page of that LIFF app."""
 
     def make(
         turn: ToolTurn, question: str, labels: list[str] | None, kind: str, *, multiple: bool
@@ -55,9 +57,9 @@ def poll_tools(book: PollBook) -> list[ClientTool]:
         if not turn.output.has_room():
             return ToolOutcome(NO_ROOM_RESULT, is_error=True)
         poll = book.create(turn.group_id, question, labels, kind=kind, multiple=multiple)
-        turn.output.add(_extra_of(poll))
+        turn.output.add(_extra_of(poll, liff_id))
         return ToolOutcome(
-            f"Poll {poll.id} is sent as a card after your reply. Members press its buttons; "
+            f"Poll {poll.id} is sent as a card after your reply. Members vote from it; "
             "votes are counted without you, so call poll_results when someone asks for the count."
         )
 
@@ -128,8 +130,8 @@ def clean_labels(raw: object) -> list[str] | None:
     return labels
 
 
-def _extra_of(poll: Poll) -> OutgoingExtra:
-    return OutgoingExtra(build_poll_message(poll), poll_record_line(poll))
+def _extra_of(poll: Poll, liff_id: str | None) -> OutgoingExtra:
+    return OutgoingExtra(build_poll_message(poll, liff_id=liff_id), poll_record_line(poll))
 
 
 def _poll_id_of(tool_input: object) -> str | None:
@@ -141,11 +143,11 @@ def _create_definition() -> dict[str, Any]:
     return {
         "name": CREATE_POLL_TOOL_NAME,
         "description": (
-            "Start a vote in the group. It is sent as a card with one button per option, "
-            "after your reply; members vote by pressing a button, one vote each (or several "
-            "with multiple). Pressing the option already picked changes nothing in a "
-            "one-vote poll; a member takes a vote back by asking you (withdraw_vote). Use it "
-            "when a member asks for a vote. Write a short sentence "
+            "Start a vote in the group. It is sent as a card after your reply; members vote "
+            "from it by pressing an option's button or the button that opens the voting page, "
+            "one vote each (or several with multiple). Picking the option already picked "
+            "changes nothing in a one-vote poll; a member takes a vote back by asking you "
+            "(withdraw_vote). Use it when a member asks for a vote. Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} options of at most "
             f"{OPTION_MAX_CHARS} characters each."
         ),
@@ -175,10 +177,11 @@ def _create_date_definition() -> dict[str, Any]:
     return {
         "name": CREATE_DATE_POLL_TOOL_NAME,
         "description": (
-            "Find a date that suits everyone. It is sent as a card after your reply with one "
-            "button per candidate date; a member presses every date that suits them, and "
-            "presses again to take it back. Use it when members need to agree on a date. "
-            "poll_results then gives each date's count and names. Write a short sentence "
+            "Find a date that suits everyone. It is sent as a card after your reply, with a "
+            "button per candidate date or one that opens the voting page; a member marks every "
+            "date that suits them, and marks again to take it back. Use it when members need "
+            "to agree on a date. poll_results then gives each date's count and names. Write "
+            "a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} dates of at most "
             f"{OPTION_MAX_CHARS} characters each, like 11/23(Sat)."
         ),
