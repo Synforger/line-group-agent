@@ -24,6 +24,7 @@ DEFAULT_EFFORT = "low"
 DEFAULT_RECENT_MESSAGE_COUNT = 30
 DEFAULT_MAX_TOOL_ROUNDS = 4
 DEFAULT_HISTORY_SEARCH_LIMIT = 20
+DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS = 600
 DEFAULT_WEB_SEARCH_TYPE = "web_search_20250305"
 DEFAULT_WEB_SEARCH_MAX_USES = 3
 DEFAULT_WEB_FETCH_TYPE = "web_fetch_20250910"
@@ -103,6 +104,7 @@ class AgentConfig:
     recent_message_count: int
     max_tool_rounds: int
     history_search_limit: int
+    redelivered_answer_window_seconds: int
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -153,6 +155,12 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         max_tool_rounds=_optional(raw, "max_tool_rounds", int, DEFAULT_MAX_TOOL_ROUNDS),
         history_search_limit=_optional(
             raw, "history_search_limit", int, DEFAULT_HISTORY_SEARCH_LIMIT
+        ),
+        redelivered_answer_window_seconds=_optional(
+            raw,
+            "redelivered_answer_window_seconds",
+            int,
+            DEFAULT_REDELIVERED_ANSWER_WINDOW_SECONDS,
         ),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None

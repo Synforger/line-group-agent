@@ -38,6 +38,20 @@ def is_self_mentioned(event: dict[str, Any]) -> bool:
     return any(isinstance(m, dict) and m.get("isSelf") is True for m in mentionees)
 
 
+def is_redelivery(event: dict[str, Any]) -> bool:
+    """Return whether LINE sent this event again after an earlier delivery failed."""
+    context = event.get("deliveryContext") or {}
+    return context.get("isRedelivery") is True
+
+
+def age_seconds_of(event: dict[str, Any], now: datetime) -> float | None:
+    """Return how many seconds ago the event happened, or None without a timestamp."""
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+        return None
+    return now.timestamp() - timestamp / MILLISECONDS_PER_SECOND
+
+
 def local_time_of(event: dict[str, Any]) -> str:
     """Return the event's time as ISO 8601 in this machine's time zone."""
     timestamp = event.get("timestamp")

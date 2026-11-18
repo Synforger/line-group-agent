@@ -43,7 +43,13 @@ def build_app(config: AgentConfig) -> FastAPI:
     client = create_anthropic_client(secrets.anthropic_api_key)
     line = LineClient(secrets.line_channel_access_token)
     answerer = Answerer(config, client, build_system(persona), group_log, conversation_log, ledger)
-    dispatcher = EventDispatcher(config.allowed_group_ids, line, group_log, answerer)
+    dispatcher = EventDispatcher(
+        config.allowed_group_ids,
+        line,
+        group_log,
+        answerer,
+        redelivered_answer_window_seconds=config.redelivered_answer_window_seconds,
+    )
     return create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
