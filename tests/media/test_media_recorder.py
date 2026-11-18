@@ -31,3 +31,16 @@ async def test_content_that_is_not_a_picture_is_not_kept(tmp_path: Path) -> None
     media = recorder(tmp_path, {"55": (b"%PDF-1.4", "application/pdf")})
     assert await media.save_image(GROUP, "55") is None
     assert not (tmp_path / "groups").exists()
+
+
+async def test_a_photo_that_cannot_be_written_is_not_kept_and_does_not_stop_the_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = ImageStore(tmp_path)
+
+    def refuse(*_arguments: object) -> str:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save", refuse)
+    media = MediaRecorder(FakeLine(contents={"55": (picture(), "image/png")}), store, 100)
+    assert await media.save_image(GROUP, "55") is None

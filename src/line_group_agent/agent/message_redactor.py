@@ -25,8 +25,17 @@ from line_group_agent.agent.prompt import (
     photo_caption,
 )
 from line_group_agent.cards.card_record import CARD_RECORD_LABEL
+from line_group_agent.media.location_record import LOCATION_RECORD_LABEL
+from line_group_agent.polls.poll_text import DATE_POLL_RECORD_LABEL, POLL_RECORD_LABEL
 from line_group_agent.records.group_log import GroupMessage
 
+# The lines the dispatcher adds after a reply's text for what went with it.
+REPLY_EXTRA_LABELS = (
+    CARD_RECORD_LABEL,
+    POLL_RECORD_LABEL,
+    DATE_POLL_RECORD_LABEL,
+    LOCATION_RECORD_LABEL,
+)
 THINKING_BLOCK_TYPES = ("thinking", "redacted_thinking")
 ELEMENT_TAGS = ("message", "mention")
 
@@ -130,9 +139,14 @@ def _is_thinking(block: Any) -> bool:
 
 
 def _is_reply_of(body: str, message: GroupMessage) -> bool:
-    """Whether the record's text for a bot message is this reply (made plain, and
-    followed by the line that names its cards when it had any)."""
+    """Whether the record's text for a bot message is this reply (made plain, and followed by
+    the lines that name its cards, polls or places when it had any)."""
     plain = to_plain_text(body.strip())
     if not plain:
         return False
-    return message.text == plain or message.text.startswith(f"{plain}\n{CARD_RECORD_LABEL}")
+    if message.text == plain:
+        return True
+    if not message.text.startswith(f"{plain}\n"):
+        return False
+    extra_lines = message.text[len(plain) + 1 :].split("\n")
+    return all(line.startswith(REPLY_EXTRA_LABELS) for line in extra_lines)

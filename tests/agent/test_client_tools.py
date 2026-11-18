@@ -77,3 +77,21 @@ async def test_an_extra_message_alone_is_still_an_answer(tmp_path: Path) -> None
     )
     result = await world.answerer.answer(GROUP, MENTION)
     assert result.text is None and len(result.extras) == 1
+
+
+async def test_a_tool_that_fails_gives_the_model_an_error_result_and_the_answer_goes_on(
+    tmp_path: Path,
+) -> None:
+    def broken(_tool_input: object, _turn: ToolTurn) -> ToolOutcome:
+        raise OSError("disk full")
+
+    tool = ClientTool("broken", {"name": "broken", "description": "d", "input_schema": {}}, broken)
+    world = build_world(
+        tmp_path,
+        [call("broken", {}), text_answer("<reply>Sorry.</reply>", message_id="msg_2")],
+        tools=[tool],
+    )
+    result = await world.answerer.answer(GROUP, MENTION)
+    assert result.text == "Sorry."
+    [tool_result] = world.client.messages.requests[1]["messages"][-1]["content"]
+    assert tool_result["is_error"] is True and "disk full" not in tool_result["content"]

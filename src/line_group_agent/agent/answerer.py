@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from line_group_agent.agent.client_tool import ToolTurn
+from line_group_agent.agent.client_tool import ToolOutcome, ToolTurn
 from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
@@ -52,6 +52,7 @@ from line_group_agent.spend.spend_books import SpendBooks
 logger = logging.getLogger(__name__)
 
 SlowNotice = Callable[[], Awaitable[None]]
+TOOL_FAILED_RESULT = "The tool failed and did nothing. Tell the group briefly, or try again."
 
 
 @dataclass(frozen=True)
@@ -181,12 +182,7 @@ class Answerer:
         """Return the user turn for this mention: the envelope, with the photos sent since
         the bot's last turn attached when photos are read."""
         group_id = conversation.group_id
-        since = self.group_log.list_since_turn(
-            group_id,
-            self.config.max_catch_up_messages,
-            after_message_id=conversation.last_turn_message_id,
-            exclude_message_id=mention.message_id,
-        )
+        since = self._since_last_turn(conversation, mention)
         if conversation.starts_new_generation:
             recent = self.group_log.list_recent(
                 group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
@@ -197,6 +193,20 @@ class Answerer:
         if self.photos is None:
             return envelope
         return build_user_content(envelope, self.photos.pick(group_id, since))
+
+    def _since_last_turn(
+        self, conversation: GroupConversation, mention: GroupMessage
+    ) -> list[GroupMessage]:
+        # A turn that opens a generation shows the recent messages instead, and needs this
+        # list only to find the photos.
+        if conversation.starts_new_generation and self.photos is None:
+            return []
+        return self.group_log.list_since_turn(
+            conversation.group_id,
+            self.config.max_catch_up_messages,
+            after_message_id=conversation.last_turn_message_id,
+            exclude_message_id=mention.message_id,
+        )
 
     def _can_afford_request(self, conversation: GroupConversation) -> bool:
         estimate = request_estimate_usd(self.config, context_tokens=conversation.context_tokens)
@@ -230,11 +240,20 @@ class Answerer:
             name = block.get("name")
             if self.client_tools.has(name):
                 turn = ToolTurn(conversation.group_id, mention, output)
-                outcome = self.client_tools.run(str(name), block.get("input"), turn)
+                outcome = self._run_client_tool(str(name), block.get("input"), turn)
                 results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
                 continue
             results.append(self._run_query_tool(conversation, mention, block))
         return results, shown
+
+    def _run_client_tool(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        """Run a group tool; a tool that fails (a file that cannot be written) gives the model
+        an error result instead of ending the whole answer."""
+        try:
+            return self.client_tools.run(name, tool_input, turn)
+        except Exception as error:
+            logger.error("answer: tool %s failed (%s)", name, type(error).__name__)
+            return ToolOutcome(TOOL_FAILED_RESULT, is_error=True)
 
     def _run_query_tool(
         self, conversation: GroupConversation, mention: GroupMessage, block: dict[str, Any]

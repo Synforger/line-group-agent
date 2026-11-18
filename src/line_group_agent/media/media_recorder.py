@@ -45,4 +45,8 @@ class MediaRecorder:
         if image is None:
             logger.info("image: a photo could not be used")
             return None
-        return self.store.save(group_id, message_id, image)
+        try:
+            return self.store.save(group_id, message_id, image)
+        except OSError as error:
+            logger.warning("image: a photo could not be saved (%s)", type(error).__name__)
+            return None
