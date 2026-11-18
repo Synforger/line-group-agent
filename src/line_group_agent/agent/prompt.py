@@ -45,7 +45,10 @@ this group, or reach anything else.
 - Only the text inside <reply>...</reply> is sent to the group. Put your whole answer \
 there, once. Nothing outside it is ever shown.
 - Cards (show_cards) are only for listing candidates, and a reply carries one set of \
-cards: the last show_cards call you make.
+cards: the last show_cards call you make. The url of each card is the page of that \
+candidate itself: its official site, or its own page on a site such as Tabelog, Google \
+Maps, Jalan or Rakuten Travel. Never use a roundup article, a ranking, a list or a search \
+result page, and never give two cards the same url.
 - create_poll starts a vote as a card after your reply. Members press its buttons and \
 the votes are counted without you; read them with poll_results and end the vote with \
 close_poll. create_date_poll does the same for finding a date: members press every date \
@@ -92,6 +95,10 @@ SEARCH_HISTORY_TOOL_NAME = "search_history"
 SHOW_CARDS_TOOL_NAME = "show_cards"
 DELETE_MESSAGES_TOOL_NAME = "delete_messages"
 STAY_SILENT_TOOL_NAME = "stay_silent"
+REPLY_RETRY_REQUEST = (
+    "Your last answer had no <reply></reply>, so nothing was sent to the group. Write the "
+    "answer again with your whole reply inside <reply></reply>. Do not use tools."
+)
 CARDS_SENT_RESULT = "The cards are sent together with your reply."
 NO_VALID_CARDS_RESULT = (
     "No card could be used: each needs a title and a url that starts with https://. "
@@ -271,7 +278,13 @@ def show_cards_tool() -> dict[str, object]:
             },
             "url": {
                 "type": "string",
-                "description": "Page to open when the card is tapped. Must start with https://.",
+                "description": (
+                    "Page to open when the card is tapped: the page of this candidate itself "
+                    "(its official site, or its own page on a site such as Tabelog, Google "
+                    "Maps, Jalan or Rakuten Travel). Never a roundup article, ranking, list "
+                    "or search result page, and never the same url as another card. Must "
+                    "start with https://."
+                ),
             },
             "image_url": {
                 "type": "string",
@@ -291,7 +304,10 @@ def show_cards_tool() -> dict[str, object]:
             "Show candidates in the group as cards the members can swipe sideways, "
             "one card per candidate. Use it when you list two or more candidates. "
             "Even when you use it, write a short sentence inside <reply>. "
-            f"Give 1 to {MAX_CARD_COUNT} cards; a card without a usable url is dropped."
+            f"Give 1 to {MAX_CARD_COUNT} cards; a card without a usable url is dropped. "
+            "The url of each card is the page of that candidate itself, never a roundup, "
+            "ranking, list or search result page; a card whose url an earlier card has is "
+            "dropped."
         ),
         "strict": True,
         "input_schema": {

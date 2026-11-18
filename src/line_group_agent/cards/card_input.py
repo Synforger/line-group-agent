@@ -1,11 +1,12 @@
 """Check what the model passed to `show_cards` and turn it into cards.
 
-Pure judgement, no I/O; called by the answerer and, for the shape of an address, by the card
-image finder.
+Pure judgement, no I/O (the only trace it leaves is a count in the log); called by the answerer
+and, for the shape of an address, by the card image finder.
 """
 
 from __future__ import annotations
 
+import logging
 import unicodedata
 from urllib.parse import quote, urlsplit
 
@@ -19,13 +20,16 @@ from line_group_agent.cards.card import (
     Card,
 )
 
+logger = logging.getLogger(__name__)
+
 HTTPS_PREFIX = "https://"
 
 
 def parse_cards(raw_input: object) -> list[Card]:
     """Return the valid cards of a `show_cards` input, at most `MAX_CARD_COUNT`.
 
-    A card whose `url` is not usable is dropped. A card whose `image_url` is not
+    A card whose `url` is not usable is dropped. A card whose `url` an earlier card already
+    has is dropped too (each card must be its own page). A card whose `image_url` is not
     usable loses its image only. Long text is cut with a trailing ellipsis.
     """
     if not isinstance(raw_input, dict):
@@ -34,12 +38,21 @@ def parse_cards(raw_input: object) -> list[Card]:
     if not isinstance(items, list):
         return []
     cards: list[Card] = []
+    seen_urls: set[str] = set()
+    repeated_count = 0
     for item in items:
         card = _parse_card(item)
-        if card is not None:
+        if card is not None and card.url in seen_urls:
+            repeated_count += 1
+        elif card is not None:
             cards.append(card)
+            seen_urls.add(card.url)
         if len(cards) == MAX_CARD_COUNT:
             break
+    if repeated_count:
+        logger.info(
+            "cards: dropped %d card(s) whose url an earlier card already has", repeated_count
+        )
     return cards
 
 

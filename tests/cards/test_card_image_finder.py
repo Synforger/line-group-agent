@@ -15,14 +15,19 @@ pytestmark = pytest.mark.anyio
 
 PUBLIC_IP = "93.184.216.34"
 OG_PAGE = (
-    '<html><head><meta property="og:image" content="https://cdn.example.com/{name}.jpg">'
+    "<html><head><title>{title}</title>"
+    '<meta property="og:image" content="https://cdn.example.com/{name}.jpg">'
     "</head><body>x</body></html>"
 )
 Handler = Callable[[httpx.Request], httpx.Response | Awaitable[httpx.Response]]
 
 
 def card(name: str = "a", **changes: Any) -> Card:
-    fields: dict[str, Any] = {"title": name, "text": "x", "url": f"https://{name}.example.com/p"}
+    fields: dict[str, Any] = {
+        "title": f"hotel {name}",
+        "text": "x",
+        "url": f"https://{name}.example.com/p",
+    }
     fields.update(changes)
     return Card(**fields)
 
@@ -59,15 +64,21 @@ def page_of(content: str, content_type: str = "text/html; charset=utf-8") -> htt
     return httpx.Response(200, content=content.encode(), headers={"content-type": content_type})
 
 
+def og_html(name: str, title: str | None = None) -> str:
+    """A page whose picture is named after `name` and whose title is that of the card made
+    by `card(name)` unless `title` says otherwise."""
+    return OG_PAGE.format(name=name, title=f"hotel {name}" if title is None else title)
+
+
 def og_page(request: httpx.Request) -> httpx.Response:
-    return page_of(OG_PAGE.format(name=request.headers["host"].split(".")[0]))
+    return page_of(og_html(request.headers["host"].split(".")[0]))
 
 
 async def test_a_card_without_a_picture_gets_the_og_image_of_its_page() -> None:
     web = Web(og_page)
     [filled] = await web.finder().fill([card("gion")])
     assert filled.image_url == "https://cdn.example.com/gion.jpg"
-    assert (filled.title, filled.url) == ("gion", "https://gion.example.com/p")
+    assert (filled.title, filled.url) == ("hotel gion", "https://gion.example.com/p")
 
 
 async def test_the_connection_goes_to_the_checked_address_under_the_cards_name() -> None:
@@ -90,6 +101,7 @@ async def test_an_ipv6_address_is_pinned_in_brackets() -> None:
 async def test_the_twitter_image_is_the_second_choice() -> None:
     web = Web(
         lambda request: page_of(
+            "<title>hotel a</title>"
             '<meta name="twitter:image" content="https://cdn.example.com/t.jpg">'
         )
     )
@@ -138,13 +150,13 @@ async def test_a_page_that_does_not_open_gives_nothing(status: int) -> None:
 
 
 async def test_a_page_that_is_not_html_is_not_read() -> None:
-    web = Web(lambda request: page_of(OG_PAGE.format(name="a"), "application/pdf"))
+    web = Web(lambda request: page_of(og_html("a"), "application/pdf"))
     original = card()
     assert await web.finder().fill([original]) == [original]
 
 
 async def test_a_page_that_gives_no_content_type_is_read() -> None:
-    web = Web(lambda request: httpx.Response(200, content=OG_PAGE.format(name="a").encode()))
+    web = Web(lambda request: httpx.Response(200, content=og_html("a").encode()))
     [filled] = await web.finder().fill([card()])
     assert filled.image_url == "https://cdn.example.com/a.jpg"
 
@@ -174,7 +186,10 @@ async def test_a_name_that_resolves_to_an_inside_address_is_never_connected_to(
 
 async def test_an_address_written_as_an_ip_is_judged_the_same_way() -> None:
     # A system resolver answers an IP written as a host with that same IP.
-    web = Web(og_page, {"127.0.0.1": ["127.0.0.1"], PUBLIC_IP: [PUBLIC_IP]})
+    web = Web(
+        lambda request: page_of(og_html("outside")),
+        {"127.0.0.1": ["127.0.0.1"], PUBLIC_IP: [PUBLIC_IP]},
+    )
     inside = card("inside", url="https://127.0.0.1/admin")
     outside = card("outside", url=f"https://{PUBLIC_IP}/p")
     filled = await web.finder().fill([inside, outside])
@@ -205,7 +220,7 @@ async def test_a_redirect_is_followed_and_its_target_is_checked_too() -> None:
     def serve(request: httpx.Request) -> httpx.Response:
         if request.headers["host"] == "a.example.com":
             return httpx.Response(301, headers={"location": "https://www.a.example.com/new"})
-        return page_of(OG_PAGE.format(name="moved"))
+        return page_of(og_html("moved", "hotel a"))
 
     web = Web(serve)
     [filled] = await web.finder().fill([card()])
@@ -217,7 +232,7 @@ async def test_a_relative_redirect_stays_on_the_same_name() -> None:
     def serve(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/p":
             return httpx.Response(302, headers={"location": "/other"})
-        return page_of(OG_PAGE.format(name="rel"))
+        return page_of(og_html("rel", "hotel a"))
 
     web = Web(serve)
     [filled] = await web.finder().fill([card()])
@@ -261,8 +276,8 @@ async def test_a_slow_page_is_given_up_after_the_time_limit() -> None:
 
 
 async def test_only_the_start_of_a_page_is_read() -> None:
-    late = "<p>" + "x" * 5000 + "</p>" + OG_PAGE.format(name="late")
-    early = OG_PAGE.format(name="early") + "<p>" + "x" * 5000 + "</p>"
+    late = "<p>" + "x" * 5000 + "</p>" + og_html("late")
+    early = og_html("early") + "<p>" + "x" * 5000 + "</p>"
     web = Web(
         lambda request: page_of(late if request.headers["host"] == "late.example.com" else early)
     )
@@ -305,3 +320,60 @@ async def test_no_cards_means_no_lookups() -> None:
     web = Web(og_page)
     assert await web.finder().fill([]) == []
     assert web.requests == []
+
+
+async def test_a_picture_is_used_only_when_the_page_title_holds_the_cards_name() -> None:
+    web = Web(lambda request: page_of(og_html("roundup", "広島のおすすめカフェ10選")))
+    original = card(title="カフェ・ド・ロペ")
+    assert await web.finder().fill([original]) == [original]
+
+
+@pytest.mark.parametrize(
+    ("card_title", "page_title"),
+    [
+        ("Hotel Granvia", "Hotel Granvia Hiroshima | official"),
+        ("ホテルグランヴィア広島(ほてるぐらんう゛ぃあ)", "ほてるぐらんう゛ぃあ ひろしま"),
+        ("【公式】カフェ ロペ（Cafe Lope）", "cafe lope - 広島"),
+        ("ＨＯＴＥＬ　ＧＲＡＮＶＩＡ", "Hotel Granvia Hiroshima"),
+    ],
+)
+async def test_the_name_is_matched_through_brackets_width_and_case(
+    card_title: str, page_title: str
+) -> None:
+    web = Web(lambda request: page_of(og_html("x", page_title)))
+    [filled] = await web.finder().fill([card(title=card_title)])
+    assert filled.image_url == "https://cdn.example.com/x.jpg"
+
+
+async def test_a_page_without_a_title_gives_no_picture() -> None:
+    page = '<meta property="og:image" content="https://cdn.example.com/x.jpg">'
+    web = Web(lambda request: page_of(page))
+    original = card()
+    assert await web.finder().fill([original]) == [original]
+
+
+async def test_the_og_title_is_the_one_compared_when_there_is_one() -> None:
+    page = (
+        "<title>広島のおすすめカフェ10選</title>"
+        '<meta property="og:title" content="hotel a">'
+        '<meta property="og:image" content="https://cdn.example.com/x.jpg">'
+    )
+    web = Web(lambda request: page_of(page))
+    [filled] = await web.finder().fill([card()])
+    assert filled.image_url == "https://cdn.example.com/x.jpg"
+
+
+async def test_a_picture_found_for_several_cards_is_given_to_none_of_them() -> None:
+    web = Web(lambda request: page_of(OG_PAGE.format(name="same", title="hotel a hotel b")))
+    own = card("own", image_url="https://cdn.example.com/same.jpg")
+    filled = await web.finder().fill([card("a"), card("b"), own])
+    assert [c.image_url for c in filled] == [None, None, "https://cdn.example.com/same.jpg"]
+
+
+async def test_a_picture_found_for_one_card_stays_when_another_card_found_a_different_one() -> None:
+    web = Web(og_page)
+    filled = await web.finder().fill([card("a"), card("b")])
+    assert [c.image_url for c in filled] == [
+        "https://cdn.example.com/a.jpg",
+        "https://cdn.example.com/b.jpg",
+    ]

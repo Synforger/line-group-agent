@@ -39,6 +39,20 @@ has a name at either end is always answered; `stay_silent` is refused there. The
 sent with every request while the setting is on, so the start of the request, and with it the
 prompt cache, does not change from one turn to the next.
 
+## An answer without `<reply>`
+
+Only the text inside `<reply>…</reply>` is sent. When the model's last answer holds text but no
+`<reply>` at all, the agent does not send an error right away: it asks the model once, as a
+continuation of the same turn, to write the answer again inside `<reply></reply>`, and sends
+the `<reply>` of that answer. The request and the answer stay in the conversation like any
+other turn, and the request is a normal request for the budget (it is not made when the month
+cannot pay for one, and the group sees the budget text then). An answer with an empty
+`<reply></reply>`, with no text, or one cut off in the middle of tool work is not asked again.
+
+When the second answer has no `<reply>` either, the group sees `error_text`, except after a
+message that only held the bot's name ([above](#a-name-in-the-middle-of-a-message)): that one
+stays silent, because it may not have been meant for the bot.
+
 ## How full the conversation is
 
 The amount is the input, cache-read and cache-write tokens of the last answer. As a percent

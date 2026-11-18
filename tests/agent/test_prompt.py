@@ -149,6 +149,17 @@ def test_the_show_cards_schema_holds_only_what_a_strict_schema_allows() -> None:
     json.dumps(show_cards_tool())
 
 
+def test_the_card_url_must_be_the_candidates_own_page_in_every_place_the_model_reads() -> None:
+    tool = show_cards_tool()
+    url_description = tool["input_schema"]["properties"]["cards"]["items"]["properties"]["url"][  # type: ignore[index]
+        "description"
+    ]
+    for text in (GUARD_TEXT, str(tool["description"]), url_description):
+        assert "itself" in text and "roundup" in text and "list" in text
+    assert "same url" in GUARD_TEXT and "same url" in url_description
+    assert "Tabelog" in GUARD_TEXT and "Tabelog" in url_description
+
+
 def test_the_show_cards_description_says_when_to_use_it_and_to_still_reply() -> None:
     description = str(show_cards_tool()["description"])
     assert "two or more candidates" in description

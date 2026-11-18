@@ -24,6 +24,8 @@ from line_group_agent.agent.prompt import (
     DELETE_MESSAGES_TOOL_NAME,
     NO_VALID_CARDS_RESULT,
     NOTHING_DELETED_RESULT,
+    REPLY_PATTERN,
+    REPLY_RETRY_REQUEST,
     SEARCH_HISTORY_TOOL_NAME,
     SHOW_CARDS_TOOL_NAME,
     STAY_SILENT_REFUSED_RESULT,
@@ -156,6 +158,7 @@ class Answerer:
         cards: list[Card] = []
         output = TurnOutput()
         is_api_down = is_over_budget = False
+        last_answer: dict[str, Any] = {}
         for request_index in range(self.config.max_tool_rounds + 1):
             if request_index > 0 and not self._can_afford_request(conversation):
                 logger.info("answer: budget left is below one request; stopping the tool loop")
@@ -166,6 +169,7 @@ class Answerer:
                 is_api_down = True
                 break
             conversation.add_assistant(answer)
+            last_answer = answer
             if request_index == 0 and on_slow is not None and is_slow_ahead(answer):
                 await on_slow()
             content = answer.get("content") or []
@@ -194,19 +198,51 @@ class Answerer:
             conversation.add_user(results)
 
         reply = extract_reply("\n".join(texts))
+        if (
+            reply is None
+            and not is_api_down
+            and not is_over_budget
+            and _forgot_reply_tags(last_answer)
+        ):
+            reply, is_api_down, is_over_budget = await self._ask_for_reply_again(
+                conversation, messages
+            )
         if reply is None and not cards and not output.extras:
             return self._answer_without_reply(
-                is_api_down=is_api_down, is_over_budget=is_over_budget
+                is_api_down=is_api_down, is_over_budget=is_over_budget, is_name_only=is_name_only
             )
         if cards and self.card_images is not None:
             cards = await self.card_images.fill(cards)
         return Answer(reply, cards, extras=output.extras, quick_replies=output.quick_replies)
 
-    def _answer_without_reply(self, *, is_api_down: bool, is_over_budget: bool) -> Answer:
+    async def _ask_for_reply_again(
+        self, conversation: GroupConversation, messages: list[dict[str, Any]]
+    ) -> tuple[str | None, bool, bool]:
+        """Ask once, as a continuation of the same turn, for the answer to be written again
+        inside `<reply>`. Return the reply found in the new answer (None when it has none),
+        then whether the API was down and whether the budget could not take the request."""
+        if not self._can_afford_request(conversation):
+            logger.info("answer: budget left is below one request; not asking for the reply again")
+            return None, False, True
+        logger.info("answer: the answer had no <reply>; asking once more")
+        messages.append({"role": "user", "content": REPLY_RETRY_REQUEST})
+        conversation.add_user(REPLY_RETRY_REQUEST)
+        answer = await self.caller.create(conversation.group_id, messages)
+        if answer is None:
+            return None, True, False
+        conversation.add_assistant(answer)
+        return extract_reply(_text_of(answer)), False, False
+
+    def _answer_without_reply(
+        self, *, is_api_down: bool, is_over_budget: bool, is_name_only: bool
+    ) -> Answer:
         if is_api_down:
             return Answer(None)
         if is_over_budget:
             return Answer(self.config.budget.exhausted_text)
+        if is_name_only:
+            # A message that only held the name may not have been meant for the bot.
+            return Answer(None)
         return Answer(self.config.error_text or None)
 
     def _user_turn(
@@ -316,6 +352,19 @@ class Answerer:
         if deleted == 0:
             return _tool_result(block, NOTHING_DELETED_RESULT)
         return _tool_result(block, f"Deleted {deleted} message(s) from the records.")
+
+
+def _text_of(answer: dict[str, Any]) -> str:
+    content = answer.get("content") or []
+    return "\n".join(b["text"] for b in content if b.get("type") == "text")
+
+
+def _forgot_reply_tags(answer: dict[str, Any]) -> bool:
+    """Whether the answer that ended the turn wrote text but no `<reply>` at all."""
+    if answer.get("stop_reason") != "end_turn":
+        return False
+    text = _text_of(answer)
+    return bool(text.strip()) and REPLY_PATTERN.search(text) is None
 
 
 def _calls_stay_silent(content: list[dict[str, Any]]) -> bool:

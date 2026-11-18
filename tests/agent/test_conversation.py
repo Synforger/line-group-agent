@@ -70,11 +70,12 @@ async def test_the_second_turn_continues_the_first_and_adds_only_what_was_said_s
 async def test_a_turn_after_a_mention_with_no_reply_does_not_repeat_that_mention(
     tmp_path: Path,
 ) -> None:
-    world = build_world(tmp_path, [text_answer("no mark", usage=usage(900)), reply("x", 2)])
+    unmarked = [text_answer("no mark", usage=usage(900)), text_answer("no mark", usage=usage(900))]
+    world = build_world(tmp_path, [*unmarked, reply("x", 2)])
     await world.answerer.answer(GROUP, said(world, 1, "@bot first"))
     said(world, 2, "later chat")
     await world.answerer.answer(GROUP, said(world, 3, "@bot second"))
-    turn = world.client.messages.requests[1]["messages"][2]["content"]
+    turn = world.client.messages.requests[2]["messages"][-1]["content"]
     assert "later chat" in turn and "@bot first" not in turn
 
 
