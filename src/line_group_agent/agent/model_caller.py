@@ -1,7 +1,8 @@
 """One call to the Messages API for a group: the fixed request parts (model, system
 text, tools, cache settings), the error handling and the cost counting.
 
-Called by the answerer for each request of a mention and by the rollover for a
+The tools sent are the built-in ones, the group tools given as `extra_tools` and the
+web tools. Called by the answerer for each request of a mention and by the rollover for a
 summary. The answer comes back as the plain dict the API sent, and is not recorded
 here. An observer (the alert notifier) is told how each call went and what the month
 has cost so far.
@@ -10,6 +11,7 @@ has cost so far.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 import anthropic
@@ -52,12 +54,14 @@ class ModelCaller:
         books: SpendBooks,
         *,
         observer: CallObserver | None = None,
+        extra_tools: Sequence[dict[str, Any]] = (),
     ) -> None:
         self.config = config
         self.client = client
         self.system_text = system_text
         self.books = books
         self.observer = observer
+        self._extra_tools = list(extra_tools)
         self.tools = self._build_tools()
         # Prompt caching: one breakpoint after the fixed part (tools and system) and a
         # top-level one that moves to the end of each request, so a request reads
@@ -118,6 +122,7 @@ class ModelCaller:
             search_history_tool(self.config.history_search_limit),
             delete_messages_tool(self.config.history_search_limit),
             show_cards_tool(),
+            *self._extra_tools,
         ]
         search = self.config.web_search
         if search is not None:

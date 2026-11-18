@@ -1,10 +1,11 @@
 """Deliver an answer to the group: by reply token if it still works, else by push.
 
 The text and the cards are made plain first (LINE shows no Markdown), and the text can
-quote the message that called the bot. Cards that LINE refuses are loosened step by step
-(without images, then dropped) and a quote that LINE refuses is left out, so the text
-still arrives. When a send fails for good the alert notifier is told. Called by the
-event dispatcher; logs carry statuses only.
+quote the message that called the bot. Cards, extra messages and quick replies that LINE
+refuses are loosened step by step (cards without images, then everything but the text
+dropped) and a quote that LINE refuses is left out, so the text still arrives. When a send
+fails for good the alert notifier is told. Called by the event dispatcher; logs carry
+statuses only.
 """
 
 from __future__ import annotations
@@ -50,15 +51,28 @@ class AnswerSender:
         # Push only when LINE refused the reply token; on any other failure the reply
         # may have been delivered, and a push would send the answer twice.
         cards = plain.cards
+        extras = plain.extras
+        quick_replies = plain.quick_replies
         if isinstance(reply_token, str) and reply_token:
             try:
                 result = await self.line.reply(
-                    reply_token, plain.text, cards, quote_token=quote_token
+                    reply_token,
+                    plain.text,
+                    cards,
+                    quote_token=quote_token,
+                    extras=extras,
+                    quick_replies=quick_replies,
                 )
                 if result is ReplyResult.MESSAGE_REFUSED:
-                    logger.info("reply: LINE refused the cards; trying once without images")
+                    logger.info("reply: LINE refused the message; trying once without images")
                     result = await self.line.reply(
-                        reply_token, plain.text, cards, with_images=False, quote_token=quote_token
+                        reply_token,
+                        plain.text,
+                        cards,
+                        with_images=False,
+                        quote_token=quote_token,
+                        extras=extras,
+                        quick_replies=quick_replies,
                     )
             except LineApiError as error:
                 logger.warning("reply: failed (status %d); not retrying", error.status)
@@ -67,26 +81,38 @@ class AnswerSender:
             if result is ReplyResult.SENT:
                 return plain
             if result is ReplyResult.MESSAGE_REFUSED:
-                logger.info("reply: LINE still refused the cards; sending the text only")
-                cards = []
+                logger.info("reply: LINE still refused the message; sending the text only")
+                cards, extras, quick_replies = [], [], []
             else:
                 logger.info("reply: the reply token was refused; sending by push instead")
-        return await self._push(group_id, Answer(plain.text, cards), quote_token)
+        return await self._push(
+            group_id,
+            Answer(plain.text, cards, extras=extras, quick_replies=quick_replies),
+            quote_token,
+        )
 
     async def _push(self, group_id: str, answer: Answer, quote_token: str | None) -> Answer | None:
-        if not answer.text and not answer.cards:
+        if not answer.text and not answer.cards and not answer.extras:
             logger.info("answer: nothing left to send")
             return None
         try:
-            await self.line.push(group_id, answer.text, answer.cards, quote_token=quote_token)
+            await self.line.push(
+                group_id,
+                answer.text,
+                answer.cards,
+                quote_token=quote_token,
+                extras=answer.extras,
+                quick_replies=answer.quick_replies,
+            )
         except LineApiError as error:
-            if error.status != HTTP_BAD_REQUEST or not (quote_token or answer.cards):
+            is_rich = bool(answer.cards or answer.extras or answer.quick_replies)
+            if error.status != HTTP_BAD_REQUEST or not (quote_token or is_rich):
                 await self._note_failure()
                 raise
             if quote_token:
                 logger.info("push: LINE refused the message; trying again without the quote")
                 return await self._push(group_id, answer, None)
-            logger.info("push: LINE refused the cards; sending the text only")
+            logger.info("push: LINE refused the cards or extras; sending the text only")
             if not answer.text:
                 return None
             return await self._push(group_id, Answer(answer.text, []), None)
@@ -99,4 +125,9 @@ class AnswerSender:
 
 def _plain(answer: Answer) -> Answer:
     text = None if answer.text is None else to_plain_text(answer.text)
-    return Answer(text, [to_plain_card(card) for card in answer.cards])
+    return Answer(
+        text,
+        [to_plain_card(card) for card in answer.cards],
+        extras=answer.extras,
+        quick_replies=answer.quick_replies,
+    )

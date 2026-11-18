@@ -13,6 +13,8 @@ from line_group_agent.line_api.line_client import (
     ReplyResult,
     fit_text,
 )
+from line_group_agent.line_api.outgoing_extra import OutgoingExtra
+from line_group_agent.line_api.quick_reply import QuickReplyItem
 
 pytestmark = pytest.mark.anyio
 TOKEN = "channel-access-token"
@@ -256,3 +258,66 @@ async def test_the_remaining_messages_are_none_when_line_does_not_say() -> None:
     assert await client_routing({}).get_remaining_messages() is None
     line = client_routing({"/v2/bot/message/quota": (200, {"type": "limited", "value": 200})})
     assert await line.get_remaining_messages() is None
+
+
+LOCATION = {
+    "type": "location",
+    "title": "Gion",
+    "address": "Kyoto",
+    "latitude": 35.0,
+    "longitude": 135.7,
+}
+
+
+async def test_extra_messages_follow_the_text_and_quick_replies_ride_the_last_one() -> None:
+    line, seen = client_answering(200)
+    extras = [OutgoingExtra(LOCATION, "[位置] Gion")]
+    quick = [QuickReplyItem("Yes", "Sora、yes"), QuickReplyItem("No", "Sora、no")]
+    await line.reply("rt", "here", extras=extras, quick_replies=quick)
+    messages = json.loads(seen[0].content)["messages"]
+    assert [m["type"] for m in messages] == ["text", "location"]
+    assert "quickReply" not in messages[0]
+    assert messages[1]["quickReply"]["items"][0] == {
+        "type": "action",
+        "action": {"type": "message", "label": "Yes", "text": "Sora、yes"},
+    }
+
+
+async def test_quick_replies_ride_the_text_when_it_is_the_only_message() -> None:
+    line, seen = client_answering(200)
+    await line.push("Cgroup", "pick one", quick_replies=[QuickReplyItem("A", "A")])
+    [message] = json.loads(seen[0].content)["messages"]
+    assert message["quickReply"]["items"] == [
+        {"type": "action", "action": {"type": "message", "label": "A", "text": "A"}}
+    ]
+
+
+async def test_a_refused_extra_message_is_a_refused_message_not_a_refused_token() -> None:
+    line, _ = client_answering(400, {"message": "bad message"})
+    extras = [OutgoingExtra(LOCATION, "x")]
+    assert await line.reply("rt", "hi", extras=extras) is ReplyResult.MESSAGE_REFUSED
+
+
+def content_client(status: int, body: bytes, content_type: str) -> LineClient:
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api-data.line.me"
+        assert request.url.path == "/v2/bot/message/123/content"
+        assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        return httpx.Response(status, content=body, headers={"content-type": content_type})
+
+    http = httpx.AsyncClient(base_url=API_BASE_URL, transport=httpx.MockTransport(handle))
+    return LineClient(TOKEN, http_client=http)
+
+
+async def test_the_content_of_an_image_is_read_from_the_data_host() -> None:
+    line = content_client(200, b"\x89PNG", "image/png; charset=binary")
+    assert await line.get_message_content("123") == (b"\x89PNG", "image/png")
+
+
+async def test_content_that_is_gone_is_none() -> None:
+    assert await content_client(404, b"", "text/plain").get_message_content("123") is None
+
+
+async def test_content_over_the_size_limit_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("line_group_agent.line_api.line_client.MAX_CONTENT_BYTES", 3)
+    assert await content_client(200, b"abcd", "image/png").get_message_content("123") is None

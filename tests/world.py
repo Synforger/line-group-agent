@@ -4,12 +4,15 @@ and a scripted API, for tests that cover answering, rolling over and the tab lis
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from line_group_agent.agent.answerer import Answerer
+from line_group_agent.agent.client_tool import ClientTool
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.rollover import Rollover
@@ -69,8 +72,15 @@ class World:
         return loaded
 
 
-def build_world(tmp_path: Path, answers: list[dict[str, Any]], **overrides: Any) -> World:
+def build_world(
+    tmp_path: Path,
+    answers: list[dict[str, Any]],
+    *,
+    tools: Iterable[ClientTool] = (),
+    **overrides: Any,
+) -> World:
     config = make_config(tmp_path, **overrides)
+    client_tools = ClientTools(tools)
     client = FakeAnthropic(answers)
     line = FakeLine(group_names={GROUP: "Trip friends"})
     clock = Clock()
@@ -83,9 +93,11 @@ def build_world(tmp_path: Path, answers: list[dict[str, Any]], **overrides: Any)
     overall.open()
     books = SpendBooks(overall, config.state_dir, config.budget, settings, conversations.count)
     tabs = TabsFile(config.tabs_file, conversations, books, settings, clock)
-    caller = ModelCaller(config, client, "SYSTEM", books)
+    caller = ModelCaller(config, client, "SYSTEM", books, extra_tools=client_tools.definitions())
     deleter = MessageDeleter(group_log, conversations, search_limit=config.history_search_limit)
-    answerer = Answerer(config, caller, group_log, conversations, books, deleter)
+    answerer = Answerer(
+        config, caller, group_log, conversations, books, deleter, client_tools=client_tools
+    )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)
     watcher = GroupWatcher(

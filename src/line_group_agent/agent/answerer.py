@@ -1,6 +1,6 @@
 """Answer one mention inside the group's running conversation: add the turn, call the
-Messages API, run the history-search, show-cards and delete-messages tools, and return
-the reply text and the cards to send.
+Messages API, run the history-search, show-cards, delete-messages and group tools, and
+return the reply text, the cards, the extra messages and the quick replies to send.
 
 Called by the event dispatcher for each message that mentions the bot. The
 conversation record, the context amount and the money counters are kept here and in
@@ -14,6 +14,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from line_group_agent.agent.client_tool import ToolTurn
+from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import (
@@ -29,9 +31,12 @@ from line_group_agent.agent.prompt import (
 )
 from line_group_agent.agent.slow_answer import is_slow_ahead
 from line_group_agent.agent.tool_pairing import pair_tool_calls
+from line_group_agent.agent.turn_output import TurnOutput
 from line_group_agent.cards.card import Card
 from line_group_agent.cards.card_input import parse_cards
 from line_group_agent.config.agent_config import AgentConfig
+from line_group_agent.line_api.outgoing_extra import OutgoingExtra
+from line_group_agent.line_api.quick_reply import QuickReplyItem
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -49,10 +54,13 @@ SlowNotice = Callable[[], Awaitable[None]]
 
 @dataclass(frozen=True)
 class Answer:
-    """What to send for one mention: a reply text, cards, both or neither."""
+    """What to send for one mention: a reply text, cards, extra messages (a poll card, a
+    location) and quick reply buttons, or none of them."""
 
     text: str | None
     cards: list[Card] = field(default_factory=list)
+    extras: list[OutgoingExtra] = field(default_factory=list)
+    quick_replies: list[QuickReplyItem] = field(default_factory=list)
     # False for a notice sent without taking a turn (the budget text): recording it as
     # the bot's reply would move the "since your last turn" window past messages the
     # model has not seen yet.
@@ -70,6 +78,8 @@ class Answerer:
         conversations: GroupConversations,
         books: SpendBooks,
         deleter: MessageDeleter,
+        *,
+        client_tools: ClientTools | None = None,
     ) -> None:
         self.config = config
         self.caller = caller
@@ -77,6 +87,7 @@ class Answerer:
         self.conversations = conversations
         self.books = books
         self.deleter = deleter
+        self.client_tools = client_tools or ClientTools()
 
     async def answer(
         self, group_id: str, mention: GroupMessage, *, on_slow: SlowNotice | None = None
@@ -112,6 +123,7 @@ class Answerer:
 
         texts: list[str] = []
         cards: list[Card] = []
+        output = TurnOutput()
         is_api_down = is_over_budget = False
         for request_index in range(self.config.max_tool_rounds + 1):
             if request_index > 0 and not self._can_afford_request(conversation):
@@ -139,18 +151,18 @@ class Answerer:
             if request_index == self.config.max_tool_rounds:
                 logger.info("answer: tool rounds used up (%d)", self.config.max_tool_rounds)
                 break
-            results, shown = self._run_tools(conversation, mention, content)
+            results, shown = self._run_tools(conversation, mention, content, output)
             if shown is not None:
                 cards = shown
             messages.append({"role": "user", "content": results})
             conversation.add_user(results)
 
         reply = extract_reply("\n".join(texts))
-        if reply is None and not cards:
+        if reply is None and not cards and not output.extras:
             return self._answer_without_reply(
                 is_api_down=is_api_down, is_over_budget=is_over_budget
             )
-        return Answer(reply, cards)
+        return Answer(reply, cards, extras=output.extras, quick_replies=output.quick_replies)
 
     def _answer_without_reply(self, *, is_api_down: bool, is_over_budget: bool) -> Answer:
         if is_api_down:
@@ -181,10 +193,15 @@ class Answerer:
         )
 
     def _run_tools(
-        self, conversation: GroupConversation, mention: GroupMessage, content: list[dict[str, Any]]
+        self,
+        conversation: GroupConversation,
+        mention: GroupMessage,
+        content: list[dict[str, Any]],
+        output: TurnOutput,
     ) -> tuple[list[dict[str, Any]], list[Card] | None]:
         """Run the client tools of one turn. Also return the cards of the last
-        `show_cards` call that held a usable card, or None when there was none."""
+        `show_cards` call that held a usable card, or None when there was none. The group
+        tools add their messages and quick replies to `output`."""
         results: list[dict[str, Any]] = []
         shown: list[Card] | None = None
         for block in content:
@@ -197,6 +214,12 @@ class Answerer:
                     results.append(_tool_result(block, CARDS_SENT_RESULT))
                 else:
                     results.append(_tool_result(block, NO_VALID_CARDS_RESULT, is_error=True))
+                continue
+            name = block.get("name")
+            if self.client_tools.has(name):
+                turn = ToolTurn(conversation.group_id, mention, output)
+                outcome = self.client_tools.run(str(name), block.get("input"), turn)
+                results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
                 continue
             results.append(self._run_query_tool(conversation, mention, block))
         return results, shown

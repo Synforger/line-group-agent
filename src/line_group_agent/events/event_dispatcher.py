@@ -245,7 +245,7 @@ class EventDispatcher:
     async def _deliver(
         self, group_id: str, reply_token: Any, quote_token: str | None, answer: Answer
     ) -> None:
-        if not answer.text and not answer.cards:
+        if not answer.text and not answer.cards and not answer.extras:
             logger.info("answer: no reply to send")
             return
         sent = await self._sender.send(group_id, reply_token, answer, quote_token=quote_token)
@@ -378,6 +378,7 @@ def _bot_reply(sent: Answer) -> GroupMessage:
     parts = [sent.text] if sent.text else []
     if sent.cards:
         parts.append(format_card_record(sent.cards))
+    parts.extend(extra.record_line for extra in sent.extras)
     return GroupMessage(
         time=datetime.now().astimezone().isoformat(timespec="seconds"),
         message_id=f"bot-{uuid.uuid4()}",
