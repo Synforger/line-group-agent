@@ -1,6 +1,7 @@
-"""The HTTP side: one endpoint, `POST /line/webhook`, that LINE calls.
+"""The HTTP side: the endpoint `POST /line/webhook` that LINE calls, and any routers given
+(the voting page's).
 
-Built by the service builder. The endpoint caps the body size, checks the signature
+Built by the service builder. The webhook caps the body size, checks the signature
 on the raw bytes before reading anything, queues the events and answers 200 at once;
 the events are handled afterwards by the dispatcher.
 """
@@ -13,8 +14,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response
 
+from line_group_agent.webhook.capped_body import read_capped_body
 from line_group_agent.webhook.signature import is_valid_signature
 
 logger = logging.getLogger(__name__)
@@ -48,9 +50,10 @@ def create_app(
     *,
     on_close: list[Callable[[], Awaitable[None]]] | None = None,
     background: list[Background] | None = None,
+    routers: list[APIRouter] | None = None,
 ) -> FastAPI:
     """Return the web app. `background` tasks run while it is up; `on_close` runs at
-    shutdown (to close API clients)."""
+    shutdown (to close API clients); `routers` add their routes beside the webhook."""
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -70,7 +73,7 @@ def create_app(
 
     @app.post(WEBHOOK_PATH)
     async def receive(request: Request) -> Response:
-        body = await _read_capped(request, max_body_bytes)
+        body = await read_capped_body(request, max_body_bytes)
         if body is None:
             logger.warning("webhook: body over %d bytes refused", max_body_bytes)
             return Response(status_code=413)
@@ -86,19 +89,6 @@ def create_app(
             sink.add_events(events)
         return Response(status_code=200)
 
+    for router in routers or []:
+        app.include_router(router)
     return app
-
-
-async def _read_capped(request: Request, max_body_bytes: int) -> bytes | None:
-    # Refuse early on a declared length, and still count what actually arrives.
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > max_body_bytes:
-        return None
-    chunks: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > max_body_bytes:
-            return None
-        chunks.append(chunk)
-    return b"".join(chunks)

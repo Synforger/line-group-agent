@@ -160,3 +160,17 @@ def test_background_tasks_run_while_the_app_is_up() -> None:
     with TestClient(create_app(SECRET, LIMIT, RecordingSink(), background=[task])):
         assert task.events == ["start"]
     assert task.events == ["start", "stop"]
+
+
+def test_routers_given_are_served_beside_the_webhook(sink: RecordingSink) -> None:
+    from fastapi import APIRouter
+
+    router = APIRouter()
+
+    @router.get("/extra")
+    async def extra() -> dict[str, str]:
+        return {"here": "yes"}
+
+    with TestClient(create_app(SECRET, LIMIT, sink, routers=[router])) as test_client:
+        assert test_client.get("/extra").json() == {"here": "yes"}
+        assert post(test_client, b'{"events":[]}', sign(b'{"events":[]}')).status_code == 200

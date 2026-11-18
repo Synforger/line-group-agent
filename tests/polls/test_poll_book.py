@@ -1,5 +1,9 @@
+import json
+import string
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 from line_group_agent.polls.poll_book import MAX_POLLS_KEPT, PollBook, VoteResult
 
@@ -159,3 +163,47 @@ def test_a_group_id_that_is_not_letters_and_digits_is_refused(tmp_path: Path) ->
 
     with pytest.raises(ValueError, match="group id"):
         book(tmp_path).get("../x")
+
+
+def test_each_poll_gets_its_own_unguessable_link_id_that_is_kept(tmp_path: Path) -> None:
+    polls = book(tmp_path)
+    first = polls.create(GROUP, "One", ["A", "B"])
+    second = polls.create(GROUP, "Two", ["A", "B"])
+    assert first.link_id != second.link_id
+    for poll in (first, second):
+        assert len(poll.link_id) == 22
+        assert set(poll.link_id) <= set(string.ascii_letters + string.digits + "-_")
+    kept = book(tmp_path).get(GROUP, "p1")
+    assert kept is not None and kept.link_id == first.link_id
+
+
+def test_a_poll_is_found_by_its_link_id_with_its_group(tmp_path: Path) -> None:
+    polls = book(tmp_path)
+    polls.create(GROUP, "One", ["A", "B"])
+    wanted = polls.create("Cother", "Two", ["A", "B"])
+    found = book(tmp_path).find_by_link_id(wanted.link_id)
+    assert found is not None
+    assert (found.group_id, found.poll.id, found.poll.question) == ("Cother", "p1", "Two")
+
+
+@pytest.mark.parametrize("link_id", ["", "nope", "A" * 22, "../" * 8, "x" * 100])
+def test_an_id_no_poll_has_finds_nothing(tmp_path: Path, link_id: str) -> None:
+    book(tmp_path).create(GROUP, "One", ["A", "B"])
+    assert book(tmp_path).find_by_link_id(link_id) is None
+
+
+def test_nothing_is_found_before_any_poll_exists(tmp_path: Path) -> None:
+    assert book(tmp_path).find_by_link_id("A" * 22) is None
+
+
+def test_a_poll_from_before_link_ids_has_none_and_is_never_found(tmp_path: Path) -> None:
+    polls = book(tmp_path)
+    polls.create(GROUP, "One", ["A", "B"])
+    path = tmp_path / "groups" / GROUP / "polls.json"
+    document = json.loads(path.read_text())
+    del document["polls"][0]["link_id"]
+    path.write_text(json.dumps(document))
+    old = book(tmp_path).get(GROUP, "p1")
+    assert old is not None and old.link_id == ""
+    assert book(tmp_path).find_by_link_id("") is None
+    assert book(tmp_path).vote(GROUP, "p1", 0, "U1", "Aki") is VoteResult.COUNTED

@@ -1,17 +1,18 @@
 """Put the parts together from the configuration: secrets, API clients, records,
-spend, answerer, rollover, group watcher, dispatcher and the web app.
+spend, answerer, rollover, group watcher, dispatcher, the voting page and the web app.
 
 Called by the entry point.
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
 import anthropic
 import httpx2
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from line_group_agent.agent.answerer import Answerer
 from line_group_agent.agent.client_tools import ClientTools
@@ -32,7 +33,13 @@ from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.itinerary.itinerary_tools import itinerary_tools
+from line_group_agent.liff.liff_members import LiffMembers
+from line_group_agent.liff.liff_page import load_liff_page
+from line_group_agent.liff.liff_polls import LiffPolls
+from line_group_agent.liff.liff_router import build_liff_router
+from line_group_agent.liff.request_limiter import RequestLimiter
 from line_group_agent.line_api.line_client import LineClient
+from line_group_agent.line_api.login_client import LoginClient
 from line_group_agent.line_api.push_quota import PushQuota
 from line_group_agent.media.image_store import ImageStore
 from line_group_agent.media.media_recorder import MediaRecorder
@@ -80,7 +87,9 @@ def build_app(config: AgentConfig) -> FastAPI:
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
     polls = PollBook(config.state_dir, clock)
     itineraries = ItineraryBook(config.state_dir, clock)
-    client_tools = ClientTools([*poll_tools(polls), *itinerary_tools(itineraries), *bill_tools()])
+    client_tools = ClientTools(
+        [*poll_tools(polls, liff_id=config.liff_id), *itinerary_tools(itineraries), *bill_tools()]
+    )
     caller = ModelCaller(
         config,
         client,
@@ -155,13 +164,43 @@ def build_app(config: AgentConfig) -> FastAPI:
     closers = [line.close, client.close]
     if card_images is not None:
         closers.append(card_images.close)
+    routers = _liff_routers(config, polls, line, clock, closers)
     return create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
         dispatcher,
         on_close=closers,
         background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
+        routers=routers,
     )
+
+
+def _liff_routers(
+    config: AgentConfig,
+    polls: PollBook,
+    line: LineClient,
+    clock: Callable[[], datetime],
+    closers: list[Callable[[], Awaitable[None]]],
+) -> list[APIRouter]:
+    """Return the routes of the voting page, or none when `liff_id` is not set (the page and
+    its API then do not exist). The Login client it opens is added to `closers`."""
+    if config.liff_id is None or config.login_channel_id is None:
+        return []
+    login = LoginClient()
+    closers.append(login.close)
+    service = LiffPolls(
+        polls,
+        login,
+        LiffMembers(line),
+        RequestLimiter(config.liff_max_requests_per_user_per_minute),
+        login_channel_id=config.login_channel_id,
+        is_group_allowed=lambda group_id: (
+            group_id in config.allowed_group_ids or config.allow_groups_with_required_member
+        ),
+        clock=clock,
+    )
+    page = load_liff_page(config.liff_id)
+    return [build_liff_router(page, service, max_body_bytes=config.liff_max_body_bytes)]
 
 
 def _media_recorder(

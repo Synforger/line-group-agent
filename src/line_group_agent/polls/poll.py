@@ -31,7 +31,9 @@ class PollOption:
 @dataclass
 class Poll:
     """A poll. `id` is `p<number>`, counted up in the group; `kind` is `choice` or `date`.
-    With `multiple` a member may pick several options; a closed poll takes no more votes."""
+    With `multiple` a member may pick several options; a closed poll takes no more votes.
+    `link_id` is the unguessable id the voting page's link carries (empty on a poll made before
+    the page existed, which cannot be opened there)."""
 
     id: str
     kind: str
@@ -40,3 +42,4 @@ class Poll:
     multiple: bool
     is_closed: bool
     created_at: str
+    link_id: str = ""

@@ -40,6 +40,10 @@
   "max_images_per_turn": 3,
   "max_image_edge_pixels": 1568,
   "card_image_lookup": true,
+  "liff_id": "1234567890-AbCdEfGh",
+  "login_channel_id": "1234567890",
+  "liff_max_requests_per_user_per_minute": 60,
+  "liff_max_body_bytes": 1024,
   "web_search": {"type": "web_search_20250305", "max_uses": 3},
   "web_fetch": {"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000},
   "prices_usd": {

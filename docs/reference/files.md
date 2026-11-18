@@ -68,10 +68,10 @@ content of a message that was [deleted](deleting.md#summaries-written-before-the
 ## `groups/<groupId>/polls.json`
 
 The group's [polls](group-tools.md#polls), replaced whole at each change (a new poll, a vote, a
-close). The newest 50 polls are kept:
+close). The newest 50 polls are kept. `link_id` is the random id the [voting page](liff.md)'s link carries; a poll made without it cannot be opened there:
 
 ```json
-{"last_number": 2, "polls": [{"id": "p2", "kind": "choice", "question": "Where?", "multiple": false, "is_closed": false, "created_at": "2026-11-18T12:00:00+09:00", "options": [{"label": "Kyoto", "voters": [{"user_id": "U0123…", "name": "Aki"}]}, {"label": "Osaka", "voters": []}]}]}
+{"last_number": 2, "polls": [{"id": "p2", "kind": "choice", "question": "Where?", "multiple": false, "is_closed": false, "created_at": "2026-11-18T12:00:00+09:00", "link_id": "Zk3nQ8u1X0aV7bT2c9dE4g", "options": [{"label": "Kyoto", "voters": [{"user_id": "U0123…", "name": "Aki"}]}, {"label": "Osaka", "voters": []}]}]}
 ```
 
 ## `groups/<groupId>/itinerary.json`

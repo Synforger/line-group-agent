@@ -77,6 +77,28 @@ The press arrives as a postback event. The log tells which case it is:
 - No line at all: the group is not in `allowed_group_ids`, or the webhook is not receiving
   postback events
 
+## The voting page does not open or shows a message
+
+The page tells what went wrong in a line under the question; the agent's log holds the status
+(`liff: refused, …`). Nothing in either holds a token or a name.
+
+- **The LINE app says the page cannot be reached, or the page is blank.** The LIFF app's
+  Endpoint URL must be `https://<your-host>/liff/` and that address must reach the agent.
+  Check `GET https://<your-host>/liff/` from outside; it should return the page. A 404 means
+  `liff_id` and `login_channel_id` are not both set
+- **"この投票は開けません" (403).** The poll is not found (an older poll made before the setting
+  was added has no link; ask for a new vote), its group is not in `allowed_group_ids`, or the
+  member is not in the group. The three look the same on purpose. If the member is in the
+  group, check that the Login channel and the Messaging API channel are under the same
+  provider: otherwise the member's id differs and LINE says they are not in the group
+- **"ログインの期限が切れました" (401).** The ID token is old or made for another channel:
+  open the card's button again, and check that `login_channel_id` is the Login channel the LIFF
+  app belongs to and that the LIFF app has the `openid` scope
+- **"いま LINE とつながりません" (503).** LINE did not answer the agent's verify or group
+  member call (`liff: LINE could not verify a token (status …)`)
+- **"操作が続いたので…" (429).** More than `liff_max_requests_per_user_per_minute` requests in a
+  minute from one member
+
 ## The bot does not see a photo
 
 - `image: LINE did not give the content of a photo`: LINE gives a message's content for a

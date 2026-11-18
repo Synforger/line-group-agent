@@ -39,6 +39,13 @@ A vote is counted only when LINE tells the agent which member pressed the button
 user id). A press that arrives without one cannot be told from another member's press, so it
 is not counted, and the agent logs one line saying so.
 
+**With a LIFF app configured** ([the voting page](liff.md)) the card is different: it lists the
+options with their counts and has one button, "開いて投票", that opens a page inside LINE. There
+a press paints the option, grows its bar and shows who voted for what, and nothing is posted to
+the talk, so the display text and the answer line above do not apply. The rules of counting
+(one pick moves, several picks switch, a closed poll takes nothing) are the same, and a card
+sent before the setting was added keeps working with its buttons.
+
 ## Finding a date
 
 When members need to agree on a date, the bot sends a date poll: a card with one button per
