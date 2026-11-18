@@ -138,6 +138,7 @@ class AgentConfig:
     help_keywords: tuple[str, ...]
     itinerary_keywords: tuple[str, ...]
     call_names: tuple[str, ...]
+    welcome_text: str
     error_text: str
     wait_text: str
     wait_min_push_left: int
@@ -225,6 +226,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         help_keywords=_string_tuple(raw, "help_keywords", DEFAULT_HELP_KEYWORDS),
         itinerary_keywords=_string_tuple(raw, "itinerary_keywords", DEFAULT_ITINERARY_KEYWORDS),
         call_names=_string_tuple(raw, "call_names", ()),
+        welcome_text=_optional(raw, "welcome_text", str, "").strip(),
         error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
         wait_min_push_left=_at_least(

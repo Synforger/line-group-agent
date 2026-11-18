@@ -25,6 +25,7 @@
   "allow_groups_with_required_member": false,
   "alert_user_id": "U0123456789abcdef0123456789abcdef",
   "intro_file": "intro.md",
+  "welcome_text": "Welcome! Mention me if you need anything looked up.",
   "help_file": "help.md",
   "help_keywords": ["help", "what can you do"],
   "itinerary_keywords": ["itinerary"],

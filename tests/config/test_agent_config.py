@@ -223,3 +223,8 @@ def test_photo_settings_below_their_minimum_are_refused(
 ) -> None:
     with pytest.raises(ConfigError, match="at least"):
         make_config(tmp_path, **overrides)
+
+
+def test_the_welcome_text_is_empty_by_default_and_trimmed(tmp_path: Path) -> None:
+    assert make_config(tmp_path).welcome_text == ""
+    assert make_config(tmp_path, welcome_text="  Welcome!\n").welcome_text == "Welcome!"

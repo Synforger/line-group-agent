@@ -119,6 +119,7 @@ def build_app(config: AgentConfig) -> FastAPI:
             error=config.error_text,
             rate_limit=config.rate_limit_text,
             intro=intro,
+            welcome=config.welcome_text,
             help=_read_text_file(config.help_file, "help_file"),
             help_keywords=config.help_keywords,
             itinerary_keywords=config.itinerary_keywords,

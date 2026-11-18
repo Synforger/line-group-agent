@@ -16,7 +16,7 @@ Other things a member does are recorded or counted without an answer: a photo is
 small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
 a message taken back (unsend) is deleted from the records, and a button press on a poll
 card (a postback) is counted as a vote. When the bot joins an allowed group it introduces
-itself with a fixed text.
+itself with a fixed text, and when a member joins it may welcome them with another.
 
 Everything else is dropped; a join or an event from a group not on the list logs that
 group's id (and nothing else) so the operator can add it.
@@ -111,6 +111,7 @@ class NoticeTexts:
     error: str = ""
     rate_limit: str = ""
     intro: str = ""
+    welcome: str = ""
     help: str = ""
     help_keywords: tuple[str, ...] = ()
     itinerary_keywords: tuple[str, ...] = ()
@@ -201,7 +202,10 @@ class EventDispatcher:
         if group_id not in self.allowed_group_ids and not await self._admit(event, group_id):
             return
         if event.get("type") == "join":
-            await self._introduce(group_id, event)
+            await self._announce(group_id, event, self.texts.intro)
+            return
+        if event.get("type") == "memberJoined":
+            await self._announce(group_id, event, self.texts.welcome)
             return
         if (unsent_id := unsent_message_id_of(event)) is not None:
             await self._forget(group_id, unsent_id)
@@ -355,10 +359,12 @@ class EventDispatcher:
             quote_token=quote_token_of(event),
         )
 
-    async def _introduce(self, group_id: str, event: dict[str, Any]) -> None:
-        if not self.texts.intro:
+    async def _announce(self, group_id: str, event: dict[str, Any], text: str) -> None:
+        """Send a fixed text through the event's reply token (the introduction when the bot
+        joins, the welcome when a member does) and record it as the bot's own message."""
+        if not text:
             return
-        sent = await self._sender.send(group_id, event.get("replyToken"), Answer(self.texts.intro))
+        sent = await self._sender.send(group_id, event.get("replyToken"), Answer(text))
         if sent is None:
             return
         record = _bot_reply(sent)

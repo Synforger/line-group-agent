@@ -46,6 +46,13 @@ the join event's reply token. A group counts when it is on `allowed_group_ids`, 
 `required_member_user_id` is in it and `allow_groups_with_required_member` is on. Without
 `intro_file` nothing is sent. The text is recorded as the bot's own message.
 
+## The welcome
+
+When a new member joins a group the bot may answer in, it sends `welcome_text` once through
+that event's reply token (so it uses none of the month's push messages). Without
+`welcome_text` nothing is sent. The text is the same for every member, and it is recorded as
+the bot's own message.
+
 ## Alerts
 
 With `alert_user_id` set (or `required_member_user_id`, when that is not), the bot sends
