@@ -137,6 +137,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         required_member_user_id=config.required_member_user_id,
         call_names=config.call_names,
         call_name_anywhere=config.call_name_anywhere,
+        call_name_start_runs_on=config.call_name_start_runs_on,
         allow_groups_with_required_member=config.allow_groups_with_required_member,
         observer=watcher,
         texts=NoticeTexts(

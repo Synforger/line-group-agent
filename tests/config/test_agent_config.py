@@ -29,6 +29,7 @@ def test_defaults_match_the_agreed_receiving_point(tmp_path: Path) -> None:
     assert config.help_keywords == ("help",)
     assert config.call_names == ()
     assert config.call_name_anywhere is False
+    assert config.call_name_start_runs_on is False
     assert config.card_image_lookup is True
     assert config.web_search is not None and config.web_search.max_uses == 3
     assert config.budget.currency == "JPY"
@@ -101,6 +102,12 @@ def test_names_are_read_anywhere_only_when_asked_for(tmp_path: Path) -> None:
     assert make_config(tmp_path, call_name_anywhere=True).call_name_anywhere is True
     with pytest.raises(ConfigError, match="call_name_anywhere"):
         make_config(tmp_path, call_name_anywhere="yes")
+
+
+def test_a_glued_name_at_the_start_calls_only_when_asked_for(tmp_path: Path) -> None:
+    assert make_config(tmp_path, call_name_start_runs_on=True).call_name_start_runs_on is True
+    with pytest.raises(ConfigError, match="call_name_start_runs_on"):
+        make_config(tmp_path, call_name_start_runs_on="yes")
 
 
 def test_the_card_picture_lookup_is_on_unless_turned_off(tmp_path: Path) -> None:

@@ -99,13 +99,18 @@ def is_self_mentioned(event: dict[str, Any]) -> bool:
 _EDGE = " \t\u3000、。,.!！?？~〜ー…"
 
 
-def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
+def is_called_by_name(
+    event: dict[str, Any], names: tuple[str, ...], *, start_runs_on: bool = False
+) -> bool:
     """Return whether a text message starts or ends with one of `names` (any case).
 
     A name only counts at the start or the end, so a message that merely talks about
     the bot in the middle of a sentence is not taken as a call. At the start the name
     must be followed by a space or punctuation ("ソラ、" calls, "ソラって便利" does
-    not); at the end a Latin name must not be the tail of a longer word.
+    not), unless `start_runs_on` is set: then any text may follow it ("ソラ候補出して"
+    calls, as people writing without spaces do), except that a Latin name must not run
+    on into more letters or digits. At the end a Latin name must not be the tail of a
+    longer word.
     """
     message = event.get("message") or {}
     text = message.get("text")
@@ -116,6 +121,8 @@ def is_called_by_name(event: dict[str, Any], names: tuple[str, ...]) -> bool:
         key = name.casefold()
         after = body[len(key) : len(key) + 1]
         if body.startswith(key) and (not after or after in _EDGE):
+            return True
+        if start_runs_on and body.startswith(key) and not (_runs_on(key[-1]) and _runs_on(after)):
             return True
         if body.endswith(key) and not _runs_on(body[-len(key) - 1 : -len(key)]):
             return True

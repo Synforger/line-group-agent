@@ -143,6 +143,7 @@ class AgentConfig:
     itinerary_keywords: tuple[str, ...]
     call_names: tuple[str, ...]
     call_name_anywhere: bool
+    call_name_start_runs_on: bool
     welcome_text: str
     error_text: str
     wait_text: str
@@ -239,6 +240,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         itinerary_keywords=_string_tuple(raw, "itinerary_keywords", DEFAULT_ITINERARY_KEYWORDS),
         call_names=_string_tuple(raw, "call_names", ()),
         call_name_anywhere=_optional(raw, "call_name_anywhere", bool, False),
+        call_name_start_runs_on=_optional(raw, "call_name_start_runs_on", bool, False),
         welcome_text=_optional(raw, "welcome_text", str, "").strip(),
         error_text=_optional(raw, "error_text", str, DEFAULT_ERROR_TEXT),
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
