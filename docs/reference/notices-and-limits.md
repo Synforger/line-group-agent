@@ -20,7 +20,7 @@ If LINE refuses the quote, the reply is sent without it.
 |---|---|
 | The month's budget cannot cover the answer | `budget.exhausted_text` |
 | The Claude API failed | Nothing (and an [alert](#alerts) to you after three failures in a row) |
-| Anything else went wrong (the model gave no `<reply>`, ran out of tool rounds, or the agent hit an error) | `error_text` |
+| Anything else went wrong (the model gave no `<reply>` even when asked once more, ran out of tool rounds, or the agent hit an error) | `error_text`; nothing for a message that only held the bot's name |
 
 ## The wait text
 

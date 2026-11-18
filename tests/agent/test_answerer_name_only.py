@@ -109,11 +109,14 @@ async def test_an_answer_without_stay_silent_is_sent_as_usual(tmp_path: Path) ->
     assert (await world.answerer.answer(GROUP, message(), is_name_only=True)).text == "Try Gion."
 
 
-async def test_a_name_only_turn_without_any_reply_gets_the_error_text(tmp_path: Path) -> None:
-    world = build(tmp_path, [text_answer("hmm")])
-    assert await world.answerer.answer(GROUP, message(), is_name_only=True) == Answer(
-        DEFAULT_ERROR_TEXT
-    )
+async def test_a_name_only_turn_without_any_reply_stays_silent(tmp_path: Path) -> None:
+    world = build(tmp_path, [text_answer("hmm"), text_answer("hmm")])
+    assert await world.answerer.answer(GROUP, message(), is_name_only=True) == Answer(None)
+
+
+async def test_a_called_turn_without_any_reply_gets_the_error_text(tmp_path: Path) -> None:
+    world = build(tmp_path, [text_answer("hmm"), text_answer("hmm")])
+    assert await world.answerer.answer(GROUP, message()) == Answer(DEFAULT_ERROR_TEXT)
 
 
 async def test_stay_silent_is_refused_for_a_message_that_calls_the_bot(tmp_path: Path) -> None:

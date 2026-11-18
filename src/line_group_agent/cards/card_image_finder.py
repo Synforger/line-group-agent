@@ -2,7 +2,9 @@
 
 Web search results seldom carry an image address, so the model's cards mostly have none. For
 each such card the finder reads the start of the card's page and takes its `og:image` (else
-`twitter:image`). Every step is held to a small, safe shape: `https` only, the default port,
+`twitter:image`), but only when the page's title holds the card's name (a roundup or a list
+that merely mentions the place is not its page), and never one picture for two cards. Every
+step is held to a small, safe shape: `https` only, the default port,
 a public address only (checked on the addresses the name resolves to, and the connection is
 made to the address that was checked, so the name cannot change its answer in between), at
 most a few redirects each checked the same way, two seconds for a page, and only the first
@@ -15,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -23,7 +26,9 @@ import httpx
 
 from line_group_agent.cards.card import Card
 from line_group_agent.cards.card_input import usable_https_url
+from line_group_agent.cards.card_name_match import page_is_about
 from line_group_agent.cards.page_image_parser import find_page_image
+from line_group_agent.cards.page_title_parser import find_page_title
 from line_group_agent.cards.public_address import is_public_address
 
 logger = logging.getLogger(__name__)
@@ -65,12 +70,17 @@ class CardImageFinder:
 
     async def fill(self, cards: Sequence[Card]) -> list[Card]:
         """Return the cards, each one that had no picture now with the one its page names
-        (still without one when none could be found). The order is kept."""
+        (still without one when none could be found, when the page's title does not hold the
+        card's name, or when the same picture was found for another card too). A picture the
+        model gave is left as it is. The order is kept."""
         missing = [index for index, card in enumerate(cards) if card.image_url is None]
         found = await asyncio.gather(*(self._find(cards[index]) for index in missing))
+        shared = {address for address, count in Counter(found).items() if address and count > 1}
+        if shared:
+            logger.info("cards: %d picture(s) found for several cards were not used", len(shared))
         filled = list(cards)
         for index, image_url in zip(missing, found, strict=True):
-            if image_url is not None:
+            if image_url is not None and image_url not in shared:
                 filled[index] = replace(cards[index], image_url=image_url)
         return filled
 
@@ -89,6 +99,9 @@ class CardImageFinder:
             logger.info("cards: no picture found (page not readable)")
             return None
         html, page_url = page
+        if not page_is_about(card.title, find_page_title(html)):
+            logger.info("cards: no picture found (page is not about the card)")
+            return None
         return find_page_image(html, page_url)
 
     async def _read_page(self, url: str) -> tuple[str, str] | None:

@@ -39,7 +39,9 @@ async def test_returns_only_the_text_inside_reply(tmp_path: Path) -> None:
 
 
 async def test_without_a_reply_mark_the_error_text_is_returned(tmp_path: Path) -> None:
-    answerer, *_ = build(tmp_path, [text_answer("I have nothing to add.")])
+    answerer, *_ = build(
+        tmp_path, [text_answer("I have nothing to add."), text_answer("Still nothing.")]
+    )
     assert await answerer.answer(GROUP, mention()) == Answer(DEFAULT_ERROR_TEXT)
 
 
@@ -509,15 +511,21 @@ async def test_when_the_api_fails_nothing_is_sent_and_no_error_text(tmp_path: Pa
 
 
 async def test_the_error_text_is_configurable_and_empty_means_say_nothing(tmp_path: Path) -> None:
-    answerer, *_ = build(tmp_path, [text_answer("no mark")], error_text="Oops.")
+    unmarked = [text_answer("no mark"), text_answer("no mark")]
+    answerer, *_ = build(tmp_path, unmarked, error_text="Oops.")
     assert await answerer.answer(GROUP, mention()) == Answer("Oops.")
-    quiet, *_ = build(tmp_path / "quiet", [text_answer("no mark")], error_text="")
+    quiet, *_ = build(tmp_path / "quiet", unmarked, error_text="")
     assert await quiet.answer(GROUP, mention()) == Answer(None)
 
 
 async def test_a_reply_with_cards_but_no_text_is_not_an_error(tmp_path: Path) -> None:
     answerer, *_ = build(
-        tmp_path, [cards_call([hotel("gion")]), text_answer("No mark.", message_id="m2")]
+        tmp_path,
+        [
+            cards_call([hotel("gion")]),
+            text_answer("No mark.", message_id="m2"),
+            text_answer("No mark.", message_id="m3"),
+        ],
     )
     result = await answerer.answer(GROUP, mention())
     assert result.text is None and len(result.cards) == 1

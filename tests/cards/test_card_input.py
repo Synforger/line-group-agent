@@ -18,6 +18,10 @@ def card_input(**overrides: Any) -> dict[str, Any]:
     return card
 
 
+def page(number: int) -> str:
+    return f"https://example.com/hotel-{number}"
+
+
 def parse_one(**overrides: Any) -> Card | None:
     cards = parse_cards({"cards": [card_input(**overrides)]})
     return cards[0] if cards else None
@@ -111,15 +115,33 @@ def test_a_card_without_a_title_is_dropped_but_a_missing_text_is_empty() -> None
 
 
 def test_at_most_ten_cards_are_kept_in_order() -> None:
-    raw = {"cards": [card_input(title=f"hotel {n}") for n in range(15)]}
+    raw = {"cards": [card_input(title=f"hotel {n}", url=page(n)) for n in range(15)]}
     cards = parse_cards(raw)
     assert len(cards) == MAX_CARD_COUNT == 10
     assert [c.title for c in cards] == [f"hotel {n}" for n in range(10)]
 
 
 def test_dropped_cards_do_not_use_up_the_ten() -> None:
-    raw = {"cards": [card_input(url="http://bad")] * 5 + [card_input()] * 10}
+    raw = {
+        "cards": [card_input(url="http://bad")] * 5 + [card_input(url=page(n)) for n in range(10)]
+    }
     assert len(parse_cards(raw)) == 10
+
+
+def test_a_card_whose_url_an_earlier_card_has_is_dropped() -> None:
+    raw = {
+        "cards": [
+            card_input(title="first", url=page(1)),
+            card_input(title="second", url=page(2)),
+            card_input(title="again", url=page(1)),
+        ]
+    }
+    assert [c.title for c in parse_cards(raw)] == ["first", "second"]
+
+
+def test_dropped_repeats_do_not_use_up_the_ten() -> None:
+    raw = {"cards": [card_input(url=page(0))] * 5 + [card_input(url=page(n)) for n in range(1, 11)]}
+    assert [c.url for c in parse_cards(raw)] == [page(n) for n in range(10)]
 
 
 def test_something_that_is_not_a_card_list_gives_no_cards() -> None:
