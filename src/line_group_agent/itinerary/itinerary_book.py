@@ -183,19 +183,6 @@ class ItineraryBook:
         self._change(group_id, chosen)
         return self.get(group_id)
 
-    def update(self, group_id: str, text: str) -> bool:
-        """Replace the earlier-shape memo text kept beside the items. Return False (and write
-        nothing) when `text` is what is already kept.
-
-        TODO: remove once the event dispatcher sends the card instead of the text, which leaves
-        no writer of the memo.
-        """
-        current = self.get(group_id) or NO_ITINERARY
-        if current.legacy_text == text:
-            return False
-        self._change(group_id, replace(current, legacy_text=text))
-        return True
-
     def _change(self, group_id: str, after: Itinerary) -> None:
         """Write `after` as the current state and keep the one it replaces."""
         before = self.get(group_id)

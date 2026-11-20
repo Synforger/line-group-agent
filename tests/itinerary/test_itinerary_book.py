@@ -236,12 +236,3 @@ def test_a_damaged_file_reads_as_no_itinerary_and_can_be_replaced(tmp_path: Path
     assert book.get(GROUP) is None and book.versions(GROUP) == []
     book.add_item(GROUP, day=1, title="fresh")
     assert json.loads(path.read_text())["items"][0]["title"] == "fresh"
-
-
-def test_the_memo_can_be_replaced_without_touching_the_items(tmp_path: Path) -> None:
-    book = make_book(tmp_path)
-    book.add_item(GROUP, day=1, title="A")
-    assert book.update(GROUP, "memo")
-    assert not book.update(GROUP, "memo")
-    saved = book.get(GROUP)
-    assert saved is not None and saved.legacy_text == "memo" and len(saved.items) == 1

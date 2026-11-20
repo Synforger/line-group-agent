@@ -17,7 +17,7 @@ from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.liff.itinerary_view import itinerary_view_of
 from line_group_agent.liff.liff_gate import LiffGate
 from line_group_agent.liff.liff_members import LiffMembers
-from line_group_agent.liff.liff_polls import HTTP_FORBIDDEN, HTTP_UNAVAILABLE, LiffRefusal
+from line_group_agent.liff.liff_refusal import HTTP_FORBIDDEN, HTTP_UNAVAILABLE, LiffRefusal
 
 logger = logging.getLogger(__name__)
 

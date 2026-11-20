@@ -3,7 +3,7 @@
 Every call carries the member's LINE ID token. It is verified with LINE Login (its audience and
 expiry checked again here; while too many verifies have failed LINE is not asked at all), and
 the member's requests are counted. A refusal is a `LiffRefusal` that carries an HTTP status and
-nothing else. Called by the itinerary page's service.
+nothing else. Called by the poll and itinerary services of the LIFF pages.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from line_group_agent.liff.id_token_check import user_id_of_claims
-from line_group_agent.liff.liff_polls import (
+from line_group_agent.liff.liff_refusal import (
     HTTP_TOO_MANY_REQUESTS,
     HTTP_UNAUTHORIZED,
     HTTP_UNAVAILABLE,

@@ -32,8 +32,8 @@ from line_group_agent.events.mention_limiter import MentionLimiter
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
+from line_group_agent.itinerary.itinerary_replier import ItineraryReplier
 from line_group_agent.itinerary.itinerary_tools import itinerary_tools
-from line_group_agent.liff.liff_gate import LiffGate
 from line_group_agent.liff.liff_itineraries import LiffItineraries
 from line_group_agent.liff.liff_members import LiffMembers
 from line_group_agent.liff.liff_page import load_itinerary_page, load_liff_page
@@ -169,7 +169,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         ),
         deleter=deleter,
         postbacks=PostbackHandler(polls),
-        itineraries=itineraries,
+        itineraries=ItineraryReplier(itineraries, liff_id=config.liff_id, clock=clock),
         media=_media_recorder(config, line, images),
         notifier=notifier,
     )
@@ -227,9 +227,7 @@ def _liff_routers(
     )
     itinerary_service = LiffItineraries(
         itineraries,
-        LiffGate(
-            login, limiter, verify_failures, login_channel_id=config.login_channel_id, clock=clock
-        ),
+        service.gate,
         members,
         is_group_allowed=is_group_allowed,
     )

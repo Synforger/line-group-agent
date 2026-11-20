@@ -77,7 +77,9 @@ def test_get_shows_the_memo_of_the_earlier_shape_for_the_model_to_turn_into_item
     tmp_path: Path,
 ) -> None:
     setup = Setup(tmp_path)
-    setup.book.update(GROUP, "1日目 (11/23)\nKyoto")
+    folder = tmp_path / "groups" / GROUP
+    folder.mkdir(parents=True)
+    (folder / "itinerary.json").write_text('{"text": "1日目 (11/23)\\nKyoto", "saved_at": ""}')
     content = setup.run("get_itinerary", {}).content
     assert "Earlier memo" in content and content.endswith("1日目 (11/23)\nKyoto")
 

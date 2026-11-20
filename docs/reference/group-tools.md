@@ -60,18 +60,41 @@ available in group chats.
 
 ## Trip itinerary
 
-The group has one itinerary, kept as plain text. A member can tell the bot what to put in it
-("add dinner at 7 on day two") and ask what is in it ("what is the plan?"); the bot reads the
-saved text, writes the whole new text and saves it. The text uses one heading line per day,
-like `1日目 (11/23)`, and may be up to 4,000 characters (what one LINE message holds).
+The group has one itinerary, kept item by item. Each item has a day (1 is the first day of the
+trip), an optional start and end time, a title, and an optional place, note and link. The trip
+has a name and, when known, the date of its first day. A member tells the bot what to put in
+it ("add dinner at 7 on day two") and asks what is in it ("what is the plan?"); the bot adds,
+changes and removes one item at a time by its id, so a change never rewrites the rest.
 
-- Every update replaces the whole text and keeps the version it replaced, the last five of
-  them, in the group's `itinerary.json`. Putting an older version back is done by hand there
+| Tool | What it does |
+|---|---|
+| `get_itinerary` | Reads the trip, every item with its id grouped by day, and the earlier versions. With `show_card` it also sends the itinerary as a card |
+| `add_itinerary_item` | Adds one item (`day` and `title` are required) |
+| `change_itinerary_item` | Changes the fields given for one item; an empty string clears an optional field |
+| `remove_itinerary_item` | Removes one item |
+| `set_itinerary_trip` | Sets the trip's name and/or the date of its first day |
+| `restore_itinerary` | Puts an earlier version back as the current one |
+
+- A time is `HH:MM`, 24-hour, and an end must be later than its start on the same day. A link
+  must start with `http://` or `https://`. A field over its length (title 60, place 80, note
+  300 characters) is refused, not cut. An itinerary holds at most 150 items and 30 days
+- The card shows the next three items (by the first day's date and the time now; without a
+  first day, the first three) and one button, **予定表を開く**, that opens the
+  [itinerary page](liff.md#the-itinerary-page): the whole plan as a calendar. Without a LIFF
+  app there is no page and no card, and the bot gives the plan in its reply
+- Every change keeps the state it replaced, the last five of them, in the group's
+  `itinerary.json`. `restore_itinerary` puts one back and keeps the state it replaces, so a
+  restore can be undone too
+- An itinerary written by an earlier version of this program (one plain text) is read as an
+  itinerary with no items and that text as an earlier memo. The bot sees the memo with
+  `get_itinerary` and turns it into items when asked; the page shows it folded under
+  "前のメモ". It is never deleted
 - A mention that holds only an itinerary keyword (`itinerary_keywords` in the
   [configuration](config.md), `itinerary` by default; the mention, a call name and
-  punctuation around it are ignored) gets the saved itinerary exactly as it is, without the
-  model, so it costs nothing. That reply is not recorded as a turn. When no itinerary is saved
-  yet, the model answers as for any mention
+  punctuation around it are ignored) gets the itinerary's card without the model, so it costs
+  nothing; without a LIFF app it gets the plan as text. An itinerary with no items gets one
+  short line (and the button when an earlier memo is kept). That reply is not recorded as a
+  turn. When no itinerary is saved yet, the model answers as for any mention
 
 ## Splitting costs
 

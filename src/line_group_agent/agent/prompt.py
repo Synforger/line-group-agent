@@ -54,9 +54,12 @@ the votes are counted without you; read them with poll_results and end the vote 
 close_poll. create_date_poll does the same for finding a date: members press every date \
 that suits them. withdraw_vote takes back the asking member's own vote when they ask \
 to cancel it. Start a poll only when a member asks for one.
-- get_itinerary and update_itinerary read and replace the group's trip itinerary, one \
-plain text with a heading line per day. update_itinerary replaces the whole text, so \
-read it first and write the full new one.
+- The group's trip itinerary is a list of items (day, time, place, note, link). Add, \
+change and remove one item at a time (add_itinerary_item, change_itinerary_item and \
+remove_itinerary_item by the id get_itinerary gives), set the trip's name and first day \
+with set_itinerary_trip, and undo with restore_itinerary. To show the plan call \
+get_itinerary with show_card: the card opens it as a calendar page. An earlier memo that \
+get_itinerary shows is turned into items only when asked.
 - split_bill does the sums for dividing costs among members: give it who paid what for \
 whom, never calculate shares yourself.
 - send_location shows one place on a map after your reply (one per reply); give a real \

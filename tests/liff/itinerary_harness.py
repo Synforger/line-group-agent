@@ -13,7 +13,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
-from line_group_agent.liff.liff_gate import LiffGate
 from line_group_agent.liff.liff_itineraries import LiffItineraries
 from line_group_agent.liff.liff_members import LiffMembers
 from line_group_agent.liff.liff_page import load_itinerary_page, load_liff_page
@@ -103,15 +102,11 @@ def build_itinerary_liff(
         is_group_allowed=lambda group_id: group_id in allowed_groups,
         clock=clock,
     )
-    gate = LiffGate(
-        login,  # type: ignore[arg-type]
-        limiter,
-        failures,
-        login_channel_id=LOGIN_CHANNEL,
-        clock=clock,
-    )
     service = LiffItineraries(
-        itineraries, gate, members, is_group_allowed=lambda group_id: group_id in allowed_groups
+        itineraries,
+        polls.gate,
+        members,
+        is_group_allowed=lambda group_id: group_id in allowed_groups,
     )
     app = FastAPI()
     app.include_router(
