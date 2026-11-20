@@ -33,6 +33,7 @@ from line_group_agent.agent.prompt import (
     STAY_SILENT_SKIPPED_RESULT,
     STAY_SILENT_TOOL_NAME,
     STAY_SILENT_WITH_ACTIONS_RESULT,
+    STAY_SILENT_WITH_REPLY_RESULT,
     build_envelope,
     build_user_content,
     extract_reply,
@@ -175,10 +176,17 @@ class Answerer:
                 await on_slow()
             content = answer.get("content") or []
             if is_name_only and _calls_only_stay_silent(content):
-                # The turn is kept whole (its call has a result) and nothing is sent.
-                conversation.add_user(_silence_results(content))
-                logger.info("answer: stayed silent for a message that only held the name")
-                return Answer(None)
+                written = _text_of(answer)
+                if extract_reply(written) is None:
+                    # The turn is kept whole (its call has a result) and nothing is sent.
+                    conversation.add_user(_silence_results(content))
+                    logger.info("answer: stayed silent for a message that only held the name")
+                    return Answer(None)
+                # A reply written in the same turn is what the model meant to say.
+                texts.append(written)
+                conversation.add_user(_silence_results(content, STAY_SILENT_WITH_REPLY_RESULT))
+                logger.info("answer: stay_silent came with a written reply; the reply is sent")
+                break
             if text := _text_of(answer):
                 texts.append(text)
             # The answer's blocks go back to the API exactly as they came (thinking
@@ -408,11 +416,13 @@ def _calls_other_tools(content: list[dict[str, Any]]) -> bool:
     )
 
 
-def _silence_results(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return the results of a turn that ended in `stay_silent`: the call is accepted and
-    any other call of the turn is not run."""
+def _silence_results(
+    content: list[dict[str, Any]], silence_result: str = STAY_SILENT_RESULT
+) -> list[dict[str, Any]]:
+    """Return the results of a turn that ended in `stay_silent`: the call gets
+    `silence_result` and any other call of the turn is not run."""
     return [
-        _tool_result(block, STAY_SILENT_RESULT)
+        _tool_result(block, silence_result)
         if block.get("name") == STAY_SILENT_TOOL_NAME
         else _tool_result(block, STAY_SILENT_SKIPPED_RESULT, is_error=True)
         for block in content

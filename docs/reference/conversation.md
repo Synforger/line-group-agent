@@ -35,7 +35,7 @@ turn tells the model that the message may not be addressed to it, and gives it t
 `stay_silent`. When the model calls it, nothing is sent to the group and the bot's reply is
 not recorded, but the turn stays in the conversation: the bot remembers it read the message,
 and the next turn carries only what was said after it. A message that mentions the bot or
-has a name at either end is always answered; `stay_silent` is refused there. A turn that calls `stay_silent` together with other tools runs the other tools and answers. The tool is
+has a name at either end is always answered; `stay_silent` is refused there. A turn that calls `stay_silent` together with other tools runs the other tools and answers. A reply written in the same turn as `stay_silent` is sent. The tool is
 sent with every request while the setting is on, so the start of the request, and with it the
 prompt cache, does not change from one turn to the next.
 
