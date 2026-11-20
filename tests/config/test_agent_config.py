@@ -9,6 +9,8 @@ from line_group_agent.config.agent_config import (
     load_secrets,
     parse_config,
 )
+from line_group_agent.stickers.default_stickers import DEFAULT_STICKERS
+from line_group_agent.stickers.sticker import Sticker
 from tests.fakes import make_config, raw_config
 
 
@@ -115,6 +117,37 @@ def test_the_card_picture_lookup_is_on_unless_turned_off(tmp_path: Path) -> None
     assert make_config(tmp_path, card_image_lookup=True).card_image_lookup is True
     with pytest.raises(ConfigError, match="card_image_lookup"):
         make_config(tmp_path, card_image_lookup="yes")
+
+
+def test_the_stickers_default_to_the_built_in_list_and_can_be_listed_or_turned_off(
+    tmp_path: Path,
+) -> None:
+    assert make_config(tmp_path).stickers == DEFAULT_STICKERS
+    assert make_config(tmp_path, stickers={}).stickers == ()
+    config = make_config(
+        tmp_path,
+        stickers={"ありがとう": {"package_id": "8515", "sticker_id": 16581243}},
+    )
+    assert config.stickers == (Sticker("ありがとう", "8515", "16581243"),)
+
+
+@pytest.mark.parametrize(
+    "stickers",
+    [
+        {"": {"package_id": "1", "sticker_id": "2"}},
+        {"x" * 21: {"package_id": "1", "sticker_id": "2"}},
+        {"a": {"package_id": "1"}},
+        {"a": {"package_id": "one", "sticker_id": "2"}},
+        {"a": {"package_id": True, "sticker_id": "2"}},
+        {"a": "1/2"},
+        {"a ": {"package_id": "1", "sticker_id": "2"}, "a": {"package_id": "1", "sticker_id": "3"}},
+        {str(n): {"package_id": "1", "sticker_id": "2"} for n in range(51)},
+        ["a"],
+    ],
+)
+def test_a_bad_sticker_list_is_refused(tmp_path: Path, stickers: object) -> None:
+    with pytest.raises(ConfigError, match="sticker"):
+        make_config(tmp_path, stickers=stickers)
 
 
 def test_a_wrong_kind_is_refused(tmp_path: Path) -> None:

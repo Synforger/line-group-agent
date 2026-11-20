@@ -16,14 +16,17 @@ replaced whole:
 - `user_id` is `null` when LINE does not give it; `display_name` is `null` when the
   member profile cannot be read
 - A [location](group-tools.md#locations) is the text `[位置] name address (latitude, longitude)`.
+- A [sticker](group-tools.md#stickers) is the text `(スタンプ: <keywords>)`, the keywords LINE gives
+  it joined with `、` (`(スタンプ)` when it gives none)
 - A message [imported](importing-history.md) from an old chat history has `"imported": true`
   and no `user_id`; age does not delete it.
-- Stickers, videos and other kinds of messages are not recorded. A [photo](group-tools.md#photos)
+- Videos, audio, files and other kinds of messages are not recorded. A [photo](group-tools.md#photos)
   is the text `[写真]` with `"image_file": "<message id>.jpg"` naming its file (the field is
   missing from every other row, and for a photo that could not be kept)
 - A reply the bot sent is recorded too, with `"from_bot": true` and no user. When the
-  reply carried a [poll](group-tools.md#polls) or a location, a line for each follows it (`[投票] p1 …`,
-  `[位置] …`). When it carried [cards](cards.md), a line names them, e.g.
+  reply carried a [poll](group-tools.md#polls), a location or a sticker, a line for each follows it
+  (`[投票] p1 …`, `[位置] …`, `(スタンプ: ありがとう)`). When the reply [mentioned](group-tools.md#mentions)
+  members, its text keeps the `<mention>name</mention>` marks as the model wrote them. When it carried [cards](cards.md), a line names them, e.g.
   `[カード] 1. Gion Inn (¥2,980〜) https://… / 2. River Hotel https://…`, so a later
   mention such as "the second one" can be followed
 

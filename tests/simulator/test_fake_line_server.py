@@ -107,3 +107,59 @@ async def test_the_member_list_and_the_loading_mark_are_answered() -> None:
         assert ids.json() == {"memberIds": [AKI.user_id, BEN.user_id]}
         loading = await http.post("/v2/bot/chat/loading/start", json={"chatId": AKI.user_id})
         assert loading.status_code == 202
+
+
+def text_v2(text: str, *user_ids: str) -> dict:
+    substitution = {
+        f"m{number}": {"type": "mention", "mentionee": {"type": "user", "userId": user_id}}
+        for number, user_id in enumerate(user_ids, start=1)
+    }
+    return {"type": "textV2", "text": text, "substitution": substitution}
+
+
+async def test_a_text_v2_mention_of_a_member_and_a_sticker_pass() -> None:
+    server, line, _ = make_clients()
+    server.issue_reply_token("rt1")
+    sticker = OutgoingExtra(
+        {"type": "sticker", "packageId": "8515", "stickerId": "1"}, "(スタンプ)"
+    )
+    result = await line.reply(
+        "rt1", "<mention>Aki</mention> {x}", extras=[sticker], mentionable={"Aki": AKI.user_id}
+    )
+    assert result is ReplyResult.SENT
+    [call] = server.sent_calls()
+    assert [message["type"] for message in call.messages] == ["textV2", "sticker"]
+
+
+async def test_line_refuses_a_text_v2_it_would_refuse() -> None:
+    server, line, _ = make_clients()
+    for token in ("a", "b"):
+        server.issue_reply_token(token)
+    outsider = await line.reply("a", "<mention>Cleo</mention>", mentionable={"Cleo": "Ucleo"})
+    assert outsider is ReplyResult.MESSAGE_REFUSED
+    assert await line.reply("b", "<mention>Aki</mention>", mentionable={"Aki": AKI.user_id}) is (
+        ReplyResult.SENT
+    )
+    assert [call.status for call in server.calls] == [400, 200]
+
+
+@pytest.mark.parametrize(
+    ("message", "is_refused"),
+    [
+        (text_v2("{m1} hi", AKI.user_id), False),
+        (text_v2("{{m1}} hi"), False),
+        (text_v2("{m2} hi", AKI.user_id), True),
+        (text_v2("{ hi", AKI.user_id), True),
+        (text_v2("hi }", AKI.user_id), True),
+        (text_v2("", AKI.user_id), True),
+        ({"type": "sticker", "packageId": "1"}, True),
+        ({"type": "sticker", "packageId": "1", "stickerId": "2"}, False),
+    ],
+)
+async def test_the_stand_in_checks_the_shape_of_text_v2_and_sticker_messages(
+    message: dict, is_refused: bool
+) -> None:
+    server, _, _ = make_clients()
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app), base_url=ORIGIN)
+    response = await http.post("/v2/bot/message/push", json={"to": GROUP_ID, "messages": [message]})
+    assert (response.status_code == 400) is is_refused

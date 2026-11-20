@@ -1,7 +1,8 @@
 """The calls this agent makes to the LINE Messaging API: reply, push, member name,
 group name, membership check, leaving a group and the message quota.
 
-A reply or push carries the answer's text (which can quote a message), after it one Flex
+A reply or push carries the answer's text (which can quote a message, and mention members
+by the `<mention>` marks in it), after it one Flex
 Message holding the cards, then the extra messages the tools made (a poll card, a
 location), and quick reply buttons on the last of them (LINE takes up to 5 messages per
 call). The content of an image a member sent is read too. Called by the answer sender and
@@ -11,7 +12,7 @@ the media recorder. Errors carry the HTTP status only, never a token or what was
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any
 
@@ -19,6 +20,7 @@ import httpx
 
 from line_group_agent.cards.card import Card
 from line_group_agent.line_api.flex_cards import build_flex_message
+from line_group_agent.line_api.mention_text import build_text_v2, strip_mention_marks
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.line_api.quick_reply import QuickReplyItem, build_quick_reply
 
@@ -27,6 +29,7 @@ DATA_API_BASE_URL = "https://api-data.line.me"
 MAX_CONTENT_BYTES = 20 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 15.0
 TEXT_LIMIT_UTF16_UNITS = 5000
+TEXT_V2_TYPE = "textV2"
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
@@ -80,23 +83,29 @@ class LineClient:
         quote_token: str | None = None,
         extras: Sequence[OutgoingExtra] = (),
         quick_replies: Sequence[QuickReplyItem] = (),
+        mentionable: Mapping[str, str] | None = None,
     ) -> ReplyResult:
         """Answer an event with its reply token: the text first (quoting the message
         `quote_token` belongs to, when given), then the cards, then the extra messages,
-        with the quick replies on the last message.
+        with the quick replies on the last message. A `<mention>` mark in the text whose name
+        is a key of `mentionable` (name to user id) becomes a mention of that member.
 
         `TOKEN_REFUSED` means the token was used or too old, so the caller can push.
         `MESSAGE_REFUSED` means LINE took the token but not the message, which only
-        happens when more than text was sent: the caller may try the cards without images.
+        happens when more than text was sent (or the text holds a mention): the caller may
+        try again without the images and the mentions.
         A 400 on a text-only reply is always reported as a refused token.
         """
-        messages = _messages(text, cards, with_images, quote_token, extras, quick_replies)
+        messages = _messages(
+            text, cards, with_images, quote_token, extras, quick_replies, mentionable
+        )
         body = {"replyToken": reply_token, "messages": messages}
         response = await self._post("/v2/bot/message/reply", body, "reply")
         if response.status_code == HTTP_OK:
             return ReplyResult.SENT
         if response.status_code == HTTP_BAD_REQUEST:
-            if (cards or extras or quick_replies) and not _is_token_refusal(response):
+            is_rich = cards or extras or quick_replies or _has_mention(messages)
+            if is_rich and not _is_token_refusal(response):
                 return ReplyResult.MESSAGE_REFUSED
             return ReplyResult.TOKEN_REFUSED
         raise LineApiError("reply", response.status_code)
@@ -111,11 +120,15 @@ class LineClient:
         quote_token: str | None = None,
         extras: Sequence[OutgoingExtra] = (),
         quick_replies: Sequence[QuickReplyItem] = (),
+        mentionable: Mapping[str, str] | None = None,
     ) -> None:
-        """Send the text (quoting a message when `quote_token` is given), then the cards and
-        the extra messages, to a group or a user (counts against the account's monthly
-        message quota)."""
-        messages = _messages(text, cards, with_images, quote_token, extras, quick_replies)
+        """Send the text (quoting a message when `quote_token` is given, and mentioning the
+        members its `<mention>` marks name that `mentionable` holds), then the cards and the
+        extra messages, to a group or a user (counts against the account's monthly message
+        quota)."""
+        messages = _messages(
+            text, cards, with_images, quote_token, extras, quick_replies, mentionable
+        )
         body = {"to": to, "messages": messages}
         headers = {"X-Line-Retry-Key": str(uuid.uuid4())}
         response = await self._post("/v2/bot/message/push", body, "push", headers)
@@ -236,19 +249,37 @@ def _messages(
     quote_token: str | None,
     extras: Sequence[OutgoingExtra],
     quick_replies: Sequence[QuickReplyItem],
+    mentionable: Mapping[str, str] | None,
 ) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     if text:
-        message: dict[str, Any] = {"type": "text", "text": fit_text(text)}
-        if quote_token:
-            message["quoteToken"] = quote_token
-        messages.append(message)
+        messages.append(_text_message(text, quote_token, mentionable or {}))
     if cards:
         messages.append(build_flex_message(list(cards), with_images=with_images))
     messages.extend(dict(extra.message) for extra in extras)
     if quick_replies and messages:
         messages[-1]["quickReply"] = build_quick_reply(quick_replies)
     return messages
+
+
+def _text_message(
+    text: str, quote_token: str | None, mentionable: Mapping[str, str]
+) -> dict[str, Any]:
+    """Return the text message: a `textV2` one when a mark names a member, else a plain one
+    with the marks replaced by the names."""
+    text_v2 = build_text_v2(text, mentionable, limit_utf16_units=TEXT_LIMIT_UTF16_UNITS)
+    message: dict[str, Any]
+    if text_v2 is None:
+        message = {"type": "text", "text": fit_text(strip_mention_marks(text))}
+    else:
+        message = {"type": TEXT_V2_TYPE, "text": text_v2.text, "substitution": text_v2.substitution}
+    if quote_token:
+        message["quoteToken"] = quote_token
+    return message
+
+
+def _has_mention(messages: Sequence[dict[str, Any]]) -> bool:
+    return any(message.get("type") == TEXT_V2_TYPE for message in messages)
 
 
 def _is_count(value: object) -> bool:

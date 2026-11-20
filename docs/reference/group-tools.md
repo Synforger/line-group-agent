@@ -165,6 +165,42 @@ so a member can ask "what is this?" about a photo.
   card that opens the map when tapped), with a real address and coordinates. One location goes
   out per reply, and it is recorded in the same form
 
+## Mentions
+
+The bot can call a member by name with a real LINE mention, which notifies them. The model writes
+`<mention>name</mention>` inside its reply, and the agent sends the reply as a
+[text message (v2)](https://developers.line.biz/en/reference/messaging-api/#text-message-v2)
+in which that name is a mention of the member.
+
+- **Only a name the group's record holds becomes a mention.** The name must equal, exactly, the
+  display name of a member in the last 1000 recorded messages (the name the model sees in the
+  conversation). A name that does not match, or that two members share, is sent as the plain name
+  without the mark. `<mention>all</mention>` never mentions everyone; it is sent as the word
+- **Only when naming someone is needed**: the result of splitting a bill, an answer to the person
+  who asked, a reminder. Otherwise the model writes names plainly
+- A message holds at most 20 mentions (later marks are plain names), and a reply too long for a
+  text v2 message is sent as plain text
+- When LINE refuses a reply that has mentions (a mentioned member who has since left the group,
+  for example), the agent sends it again as plain text with the names, so the answer still arrives
+- The bot's reply is recorded with the marks, as written, so a later deletion of that reply
+  still finds it
+
+## Stickers
+
+- **A sticker a member sends** is recorded as `(スタンプ: <keywords>)`, with the keywords LINE
+  gives (`(スタンプ)` when it gives none), so the bot can read the mood of the talk. A sticker alone
+  never calls the bot, even when it is sent as a reply to one of the bot's messages
+- **A sticker the bot sends** goes out after its reply text, through the tool `send_sticker`: the
+  model picks one name from the configured list. One sticker per reply, and the model is told to
+  use one only when it lightens the mood, not in every reply. It is recorded as
+  `(スタンプ: <name>)`
+- The list is the setting [`stickers`](config.md): a name for each sticker's LINE package id and
+  sticker id. The default has eleven stickers from the sets LINE lets a bot send (the
+  [sticker list](https://developers.line.biz/en/docs/messaging-api/sticker-list/)):
+  `了解`, `ありがとう`, `おめでとう`, `ごめん`, `笑う`, `楽しみ`, `おやすみ`, `よろしく`, `びっくり`,
+  `がんばれ` and `おつかれさま`. `{}` turns the tool off. LINE accepts only the stickers on that
+  list, so an id from outside it makes LINE refuse the message
+
 ## Quick replies
 
 When the bot asks a question that a tap can answer ("Kyoto or Osaka?"), it can put up to five

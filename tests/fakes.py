@@ -6,7 +6,7 @@ No test calls a real API: these record what they were asked and answer from a sc
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -136,6 +136,7 @@ class SentCall:
     quote_token: str | None = None
     extras: list[OutgoingExtra] | None = None
     quick_replies: list[QuickReplyItem] | None = None
+    mentionable: dict[str, str] | None = None
 
 
 class FakeLine:
@@ -192,6 +193,7 @@ class FakeLine:
         quote_token: str | None = None,
         extras: Sequence[OutgoingExtra] = (),
         quick_replies: Sequence[QuickReplyItem] = (),
+        mentionable: Mapping[str, str] | None = None,
     ) -> ReplyResult:
         self.calls.append(
             SentCall(
@@ -203,6 +205,7 @@ class FakeLine:
                 quote_token,
                 list(extras),
                 list(quick_replies),
+                dict(mentionable) if mentionable else None,
             )  # fmt: skip
         )
         if self.reply_results:
@@ -219,6 +222,7 @@ class FakeLine:
         quote_token: str | None = None,
         extras: Sequence[OutgoingExtra] = (),
         quick_replies: Sequence[QuickReplyItem] = (),
+        mentionable: Mapping[str, str] | None = None,
     ) -> None:
         self.calls.append(
             SentCall(
@@ -230,6 +234,7 @@ class FakeLine:
                 quote_token,
                 list(extras),
                 list(quick_replies),
+                dict(mentionable) if mentionable else None,
             )  # fmt: skip
         )
         status = self.push_statuses.pop(0) if self.push_statuses else None

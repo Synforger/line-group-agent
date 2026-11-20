@@ -11,6 +11,7 @@ from line_group_agent.simulator.scenario import (
     LocationStep,
     OpenLiffStep,
     PressStep,
+    StickerStep,
     TextStep,
     WaitStep,
 )
@@ -38,6 +39,10 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
             {"from": "Ua", "text": "hi", "mention": True},
             {"from": "Ub", "image": "menu.jpg"},
             {"from": "Ua", "location": {"title": "Cafe", "latitude": 35, "longitude": 135.5}},
+            {
+                "from": "Ua",
+                "sticker": {"package_id": "446", "sticker_id": 1988, "keywords": ["hi"]},
+            },
             {"from": "Ub", "press": {"reply_index": 0, "action_index": 2}},
             {"open_liff": {"reply_index": 1, "action_index": 0}},
             {
@@ -54,6 +59,7 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
         TextStep("Ua", "hi", mention=True),
         ImageStep("Ub", tmp_path / "menu.jpg"),
         LocationStep("Ua", "Cafe", "", 35.0, 135.5),
+        StickerStep("Ua", "446", "1988", ("hi",)),
         PressStep("Ub", ActionRef(0, 2)),
         OpenLiffStep("Ua", ActionRef(1, 0)),
         LiffClickStep("Ub", ActionRef(1, 0), "#share"),
@@ -79,6 +85,12 @@ def test_the_bot_can_be_given_a_name() -> None:
         ({"from": "Ua", "text": "  "}, "step 0: text must be a non-empty string"),
         ({"from": "Ua", "image": "missing.png"}, "does not exist"),
         ({"from": "Ua", "location": {"latitude": "x", "longitude": 1}}, "latitude"),
+        ({"from": "Ua", "sticker": {"package_id": "x", "sticker_id": "1"}}, "sticker.package_id"),
+        ({"from": "Ua", "sticker": {"package_id": "1"}}, "sticker.sticker_id"),
+        (
+            {"from": "Ua", "sticker": {"package_id": "1", "sticker_id": "2", "keywords": "hi"}},
+            "sticker.keywords",
+        ),
         ({"from": "Ua", "press": {"reply_index": -1, "action_index": 0}}, "reply_index"),
         ({"from": "Ua", "press": {"reply_index": 0}}, "action_index"),
         ({"from": "Ua", "liff_click": {"reply_index": 0, "action_index": 0}}, "selector"),

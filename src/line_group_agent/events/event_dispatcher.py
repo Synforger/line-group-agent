@@ -3,8 +3,8 @@
 The webhook endpoint queues events here. For an allowed group, each text message is
 recorded, and a message that mentions the bot is answered through the answerer, quoting
 the message and with a fixed text instead when no answer could be made. The reply, once
-sent, is recorded too (with a line naming any cards, polls or locations that went with it),
-so the next mention sees what the bot said.
+sent, is recorded too (with a line naming any cards, polls, locations or stickers that went
+with it), so the next mention sees what the bot said.
 
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
@@ -19,8 +19,9 @@ shortcuts are not used, and a person over the hourly limit is skipped without be
 
 Other things a member does are recorded or counted without an answer: a photo is kept (made
 small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
-a message taken back (unsend) is deleted from the records, and a button press on a poll
-card (a postback) is counted as a vote. A press in a poll that allows several picks is
+a sticker as a `(スタンプ: <keywords>)` line (a sticker never calls the bot), a message taken
+back (unsend) is deleted from the records, and a button press on a poll card (a postback) is
+counted as a vote. A press in a poll that allows several picks is
 answered with one line through the event's reply token (never by push, never recorded).
 When the bot joins an allowed group it introduces itself with a fixed text, and when a
 member joins it may welcome them with another.
@@ -62,6 +63,7 @@ from line_group_agent.events.answer_sender import AnswerSender
 from line_group_agent.events.event_fields import (
     IMAGE_KIND,
     LOCATION_KIND,
+    STICKER_KIND,
     TEXT_KIND,
     age_seconds_of,
     group_id_of,
@@ -86,6 +88,7 @@ from line_group_agent.line_api.line_client import LineApiError, LineClient, Repl
 from line_group_agent.media.location_record import shared_location_line
 from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
 from line_group_agent.records.group_log import GroupLog, GroupMessage
+from line_group_agent.stickers.sticker_record import received_sticker_line
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +164,7 @@ class EventDispatcher:
         self.line = line
         self.group_log = group_log
         self.answerer = answerer
-        self._sender = AnswerSender(line, notifier=notifier)
+        self._sender = AnswerSender(line, notifier=notifier, group_log=group_log)
         self.texts = texts or NoticeTexts()
         self.limiter = limiter
         self.wait_notice = wait_notice
@@ -298,6 +301,8 @@ class EventDispatcher:
         message = event["message"]
         if kind == LOCATION_KIND:
             return str(shared_location_line(message)), None
+        if kind == STICKER_KIND:
+            return received_sticker_line(message), None
         if kind != IMAGE_KIND or self.media is None:
             return message["text"], None
         if is_external_image(event):

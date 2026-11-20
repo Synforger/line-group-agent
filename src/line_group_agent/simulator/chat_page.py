@@ -1,7 +1,8 @@
 """Draw a scripted chat as one HTML file at a phone's width: each member's bubbles with their
-names, the bot's text, Flex cards and carousels, quick reply buttons, photos, pins and the
-LIFF pages that were opened (with what a page sent as the member and what it shared to
-another chat), with the seconds and the spend of each step under the answer.
+names, the bot's text (with each mention drawn as @name), Flex cards and carousels, quick reply
+buttons, photos, pins, stickers (a labelled box, not the picture) and the LIFF pages that were
+opened (with what a page sent as the member and what it shared to another chat), with the
+seconds and the spend of each step under the answer.
 
 Pure: the photos arrive as ready `data:` addresses so the file stands alone and loads no
 CDN. Called by the report writer.
@@ -9,8 +10,9 @@ CDN. Called by the report writer.
 
 from __future__ import annotations
 
+import re
 import zlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from html import escape
 from typing import Any
 
@@ -21,15 +23,18 @@ from line_group_agent.simulator.transcript import OutputRecord, ScenarioTranscri
 
 AVATAR_COLORS = ("#e57373", "#64b5f6", "#ffb74d", "#81c784", "#ba68c8", "#4db6ac", "#f06292")
 QUOTE_MAX_CHARS = 40
+# In a `textV2` text: a doubled brace stands for one, and `{key}` for a substitution.
+V2_TOKEN = re.compile(r"\{\{|\}\}|\{(\w+)\}")
 
 
 def render_chat_page(transcript: ScenarioTranscript, image_uris: Mapping[str, str]) -> str:
     """Return the chat page. `image_uris` maps the file path of a photo a member sent to the
     `data:` address that shows it."""
     quotes = _quotes_of(transcript)
+    names = {str(m.get("user_id")): str(m.get("name")) for m in transcript.group.get("members", [])}
     rows: list[str] = [f'<div class="day">{escape(transcript.started_at[:10])}</div>']
     for step in transcript.steps:
-        rows.extend(_rows_of(step, transcript, image_uris, quotes))
+        rows.extend(_rows_of(step, transcript, image_uris, quotes, names))
     count = len(transcript.group.get("members", []))
     group_name = str(transcript.group.get("name", ""))
     return (
@@ -47,6 +52,7 @@ def _rows_of(
     transcript: ScenarioTranscript,
     image_uris: Mapping[str, str],
     quotes: Mapping[str, str],
+    names: Mapping[str, str],
 ) -> list[str]:
     rows: list[str] = []
     shown = step.shown or {}
@@ -55,7 +61,9 @@ def _rows_of(
         rows.append(f'<div class="pass">{escape(str(shown.get("seconds")))} s</div>')
     elif kind == "advance":
         rows.append(f'<div class="pass">+{escape(str(shown.get("minutes")))} min</div>')
-    elif kind in ("text", "image", "location") or (kind == "press" and shown.get("display_text")):
+    elif kind in ("text", "image", "location", "sticker") or (
+        kind == "press" and shown.get("display_text")
+    ):
         rows.append(_member_row(step, shown, image_uris))
     elif kind == "press":
         label = escape(str(shown.get("label", "")))
@@ -69,7 +77,7 @@ def _rows_of(
     if step.error:
         rows.append(f'<div class="system problem">⚠ {escape(step.error)}</div>')
     for output in step.outputs:
-        rows.append(_bot_row(output, transcript, quotes))
+        rows.append(_bot_row(output, transcript, quotes, names))
     rows.append(f'<div class="meta">{escape(_meta_of(step))}</div>')
     return rows
 
@@ -81,6 +89,10 @@ def _member_row(step: StepRecord, shown: dict[str, Any], image_uris: Mapping[str
         body = f'<div class="bubble">{escape(str(shown.get("text", "")))}</div>'
     elif kind == "press":
         body = f'<div class="bubble">{escape(str(shown.get("display_text", "")))}</div>'
+    elif kind == "sticker":
+        body = _sticker_html(
+            shown.get("package_id"), shown.get("sticker_id"), shown.get("keywords") or ()
+        )
     elif kind == "image":
         uri = image_uris.get(str(shown.get("file")), "")
         body = f'<img class="photo" src="{escape(uri, quote=True)}" alt="">'
@@ -119,7 +131,7 @@ def _liff_shared_row(step: StepRecord, share: dict[str, Any]) -> str:
     """The row of what the page passed to `liff.shareTargetPicker`: the member's messages to
     a chat of their choice, drawn as the receiver would see them."""
     flex = FlexHtml({})
-    parts = [_message_html(message, flex, {}, {}) for message in share.get("messages", [])]
+    parts = [_message_html(message, flex, {}, {}, {}) for message in share.get("messages", [])]
     name = escape(step.sender_name or "")
     return (
         f'<div class="row"><div class="col"><span class="name">{name} → another chat '
@@ -128,11 +140,14 @@ def _liff_shared_row(step: StepRecord, share: dict[str, Any]) -> str:
 
 
 def _bot_row(
-    output: OutputRecord, transcript: ScenarioTranscript, quotes: Mapping[str, str]
+    output: OutputRecord,
+    transcript: ScenarioTranscript,
+    quotes: Mapping[str, str],
+    names: Mapping[str, str],
 ) -> str:
     numbers = action_numbers(output.messages)
     flex = FlexHtml(numbers)
-    parts = [_message_html(message, flex, numbers, quotes) for message in output.messages]
+    parts = [_message_html(message, flex, numbers, quotes, names) for message in output.messages]
     bot_name = transcript.bot_name
     label = f"{bot_name} · {output.kind} #{output.output_index}"
     if output.kind == "push" and output.target != transcript.group.get("id"):
@@ -145,13 +160,23 @@ def _bot_row(
 
 
 def _message_html(
-    message: dict[str, Any], flex: FlexHtml, numbers: Mapping[int, int], quotes: Mapping[str, str]
+    message: dict[str, Any],
+    flex: FlexHtml,
+    numbers: Mapping[int, int],
+    quotes: Mapping[str, str],
+    names: Mapping[str, str],
 ) -> str:
     kind = message.get("type")
-    if kind == "text":
+    if kind in ("text", "textV2"):
         quote = quotes.get(str(message.get("quoteToken", "")))
         quoted = f'<span class="quote">{escape(quote)}</span>' if quote else ""
-        body = f'<div class="bubble">{quoted}{escape(str(message.get("text", "")))}</div>'
+        text = str(message.get("text", ""))
+        shown = (
+            _v2_html(text, message.get("substitution"), names) if kind == "textV2" else escape(text)
+        )
+        body = f'<div class="bubble">{quoted}{shown}</div>'
+    elif kind == "sticker":
+        body = _sticker_html(message.get("packageId"), message.get("stickerId"), ())
     elif kind == "flex":
         body = f'<div title="{escape(str(message.get("altText", "")), quote=True)}">'
         body += flex.render(message.get("contents")) + "</div>"
@@ -177,6 +202,34 @@ def _quick_html(quick_reply: Any, numbers: Mapping[int, int]) -> str:
             badge = f"<sup>#{number}</sup>" if number is not None else ""
             chips.append(f'<span class="chip">{escape(str(action.get("label", "")))}{badge}</span>')
     return f'<div class="quick">{"".join(chips)}</div>' if chips else ""
+
+
+def _v2_html(text: str, substitution: Any, names: Mapping[str, str]) -> str:
+    """Return the HTML of a `textV2` text: each `{key}` of a mention drawn as `@name`, a
+    doubled brace as one."""
+    substitutions = substitution if isinstance(substitution, dict) else {}
+
+    def draw(found: re.Match[str]) -> str:
+        key = found.group(1)
+        if key is None:
+            return found.group(0)[0]
+        target = substitutions.get(key)
+        mentionee = target.get("mentionee") if isinstance(target, dict) else None
+        user_id = str(mentionee.get("userId", "")) if isinstance(mentionee, dict) else ""
+        return f'<span class="mention">@{escape(names.get(user_id, user_id))}</span>'
+
+    # Escape first: the braces and the key characters survive escaping unchanged.
+    return V2_TOKEN.sub(draw, escape(text))
+
+
+def _sticker_html(package_id: Any, sticker_id: Any, keywords: Sequence[str]) -> str:
+    """Return a box standing for a sticker: its ids and keywords, not the picture (the page
+    loads nothing from outside)."""
+    words = f"<small>{escape('、'.join(keywords))}</small>" if keywords else ""
+    return (
+        '<div class="sticker"><b>スタンプ</b>'
+        f"<small>{escape(str(package_id))} / {escape(str(sticker_id))}</small>{words}</div>"
+    )
 
 
 def _pin_html(pin: Mapping[str, Any]) -> str:
