@@ -33,8 +33,10 @@ from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
 from line_group_agent.itinerary.itinerary_tools import itinerary_tools
+from line_group_agent.liff.liff_gate import LiffGate
+from line_group_agent.liff.liff_itineraries import LiffItineraries
 from line_group_agent.liff.liff_members import LiffMembers
-from line_group_agent.liff.liff_page import load_liff_page
+from line_group_agent.liff.liff_page import load_itinerary_page, load_liff_page
 from line_group_agent.liff.liff_polls import LiffPolls
 from line_group_agent.liff.liff_router import build_liff_router
 from line_group_agent.liff.request_limiter import RequestLimiter
@@ -93,7 +95,11 @@ def build_app(config: AgentConfig) -> FastAPI:
     polls = PollBook(config.state_dir, clock)
     itineraries = ItineraryBook(config.state_dir, clock)
     client_tools = ClientTools(
-        [*poll_tools(polls, liff_id=config.liff_id), *itinerary_tools(itineraries), *bill_tools()]
+        [
+            *poll_tools(polls, liff_id=config.liff_id),
+            *itinerary_tools(itineraries, liff_id=config.liff_id, clock=clock),
+            *bill_tools(),
+        ]
     )
     caller = ModelCaller(
         config,
@@ -170,7 +176,7 @@ def build_app(config: AgentConfig) -> FastAPI:
     closers = [line.close, client.close]
     if card_images is not None:
         closers.append(card_images.close)
-    routers = _liff_routers(config, polls, line, clock, closers)
+    routers = _liff_routers(config, polls, itineraries, line, clock, closers)
     app = create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
@@ -187,33 +193,55 @@ def build_app(config: AgentConfig) -> FastAPI:
 def _liff_routers(
     config: AgentConfig,
     polls: PollBook,
+    itineraries: ItineraryBook,
     line: LineClient,
     clock: Callable[[], datetime],
     closers: list[Callable[[], Awaitable[None]]],
 ) -> list[APIRouter]:
-    """Return the routes of the voting page, or none when `liff_id` is not set (the page and
-    its API then do not exist). The Login client it opens is added to `closers`."""
+    """Return the routes of the voting page and the itinerary page, or none when `liff_id` is
+    not set (the pages and their API then do not exist). The Login client it opens is added to
+    `closers`."""
     if config.liff_id is None or config.login_channel_id is None:
         return []
     login = LoginClient(base_url=config.line_api_base_url)
     closers.append(login.close)
+    members = LiffMembers(line)
+    limiter = RequestLimiter(config.liff_max_requests_per_user_per_minute)
+    verify_failures = VerifyFailureLimiter(
+        config.liff_max_failed_verifies_per_minute,
+        config.liff_max_failed_verifies_per_source_per_minute,
+    )
+
+    def is_group_allowed(group_id: str) -> bool:
+        return group_id in config.allowed_group_ids or config.allow_groups_with_required_member
+
     service = LiffPolls(
         polls,
         login,
-        LiffMembers(line),
-        RequestLimiter(config.liff_max_requests_per_user_per_minute),
-        VerifyFailureLimiter(
-            config.liff_max_failed_verifies_per_minute,
-            config.liff_max_failed_verifies_per_source_per_minute,
-        ),
+        members,
+        limiter,
+        verify_failures,
         login_channel_id=config.login_channel_id,
-        is_group_allowed=lambda group_id: (
-            group_id in config.allowed_group_ids or config.allow_groups_with_required_member
-        ),
+        is_group_allowed=is_group_allowed,
         clock=clock,
     )
-    page = load_liff_page(config.liff_id)
-    return [build_liff_router(page, service, max_body_bytes=config.liff_max_body_bytes)]
+    itinerary_service = LiffItineraries(
+        itineraries,
+        LiffGate(
+            login, limiter, verify_failures, login_channel_id=config.login_channel_id, clock=clock
+        ),
+        members,
+        is_group_allowed=is_group_allowed,
+    )
+    return [
+        build_liff_router(
+            load_liff_page(config.liff_id),
+            service,
+            max_body_bytes=config.liff_max_body_bytes,
+            itinerary_page=load_itinerary_page(config.liff_id),
+            itineraries=itinerary_service,
+        )
+    ]
 
 
 def _media_recorder(
