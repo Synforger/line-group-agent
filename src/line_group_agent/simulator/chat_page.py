@@ -52,6 +52,8 @@ def _rows_of(
     kind = shown.get("type")
     if kind == "wait":
         rows.append(f'<div class="pass">{escape(str(shown.get("seconds")))} s</div>')
+    elif kind == "advance":
+        rows.append(f'<div class="pass">+{escape(str(shown.get("minutes")))} min</div>')
     elif kind in ("text", "image", "location") or (kind == "press" and shown.get("display_text")):
         rows.append(_member_row(step, shown, image_uris))
     elif kind == "press":
@@ -166,7 +168,7 @@ def _meta_of(step: StepRecord) -> str:
     parts = [f"step {step.index}", f"{step.seconds:.1f}s"]
     if step.outputs and step.first_output_seconds is not None:
         parts.insert(1, f"first {step.first_output_seconds:.1f}s")
-    elif step.kind not in ("wait", "open_liff", "press"):
+    elif step.kind not in ("wait", "advance", "open_liff", "press"):
         parts.append("no reply")
     if step.spend.amount:
         parts.append(f"{step.spend.amount:g} {step.spend.currency} (${step.spend.usd:.4f})")

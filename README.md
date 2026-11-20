@@ -29,6 +29,11 @@ short answer. It stays quiet otherwise.
   With a LIFF app set up the card opens a page inside LINE instead, with bars and names and
   nothing posted to the talk. See [Tools for the group](docs/reference/group-tools.md) and
   [The voting page](docs/reference/liff.md).
+- **Reminds the group at a set time.** Ask it to tell the group something at a time ("tell us
+  to gather at 21:00 the evening before"), or just to set a reminder, and it works out what
+  and when from the conversation and the itinerary. It sends the text by itself at that time.
+  Each one is a push message, so a group gets a few a month. See
+  [Tools for the group](docs/reference/group-tools.md#reminders).
 - **Keeps the trip itinerary and splits costs.** The group has one itinerary, kept item by
   item (day, time, place, note), that the bot adds to, changes and undoes on request (the last
   five versions are kept) and shows as a card that opens a calendar-style page inside LINE. A
@@ -75,7 +80,7 @@ LINE group ──▶ LINE Platform ──https──▶ your HTTPS entry ──�
                                                                │                                  ├─▶ search_history (local record)
                                                                │                                  ├─▶ delete_messages (your own messages, the bot's replies)
                                                                │                                  ├─▶ show_cards (candidates as cards)
-                                                               │                                  └─▶ polls, itinerary, split_bill, send_location, suggest_replies
+                                                               │                                  └─▶ polls, itinerary, reminders, split_bill, send_location, suggest_replies
                                                                └─ 4. reply: text, cards, polls and places, quick replies (or push if the reply token expired)
                                                                (button presses on a poll card arrive as postbacks: counted without the model; a pick-several poll answers the presser's marks in one line)
 ```
@@ -185,7 +190,8 @@ How the budget is kept:
   the token lives (about a minute), the agent sends the answer as a push message
   instead, which counts against your account's monthly message quota. Cards, polls,
   a map message and quick reply buttons go in the same call as the text. A poll vote
-  and a welcome use no message at all.
+  and a welcome use no message at all. A [reminder](docs/reference/group-tools.md#reminders)
+  is always a push, one message each.
 - A photo given to the model costs input tokens like any other (a photo is scaled down to
   `max_image_edge_pixels` first; at most `max_images_per_turn` go with one mention).
 - When an answer needs web work, the agent sends a short "one moment" text first (using
@@ -201,6 +207,7 @@ All under `state_dir`:
 | `groups/<groupId>/messages.jsonl` | Every text message of the group, a line for each photo (`[写真]`) and location (`[位置]`), and every reply the bot sent (marked `from_bot`; a reply that carried cards, a poll or a place ends with a line naming them), one JSON object per line. Appended to; messages are removed when deleted or older than `retention_days` |
 | `groups/<groupId>/images/` | The photos of the group, made small enough for the model; removed with their messages |
 | `groups/<groupId>/polls.json` | The group's polls and who voted for what |
+| `groups/<groupId>/reminders.json` | The group's reminders and whether each was sent |
 | `groups/<groupId>/itinerary.json` | The group's trip itinerary and its last five earlier versions |
 | `conversations/g-<groupId>.jsonl` | The group's running conversation: what was sent to the model and what it answered, one row per line, for a chat client to show read-only |
 | `groups/<groupId>/journal/<date>-gen<N>.md` | The summary written when the group's conversation number `N` was rolled over. Never deleted |
@@ -255,7 +262,8 @@ uv run python -m line_group_agent.simulator \
       {"open_liff": {"reply_index": 0, "action_index": 0}},
       {"from": "Uben", "image": "menu.jpg"},
       {"from": "Uaki", "location": {"title": "Cafe", "address": "Kyoto", "latitude": 35.01, "longitude": 135.76}},
-      {"wait_seconds": 2}
+      {"wait_seconds": 2},
+      {"advance_minutes": 120}
     ]
   }
   ```
@@ -268,8 +276,10 @@ uv run python -m line_group_agent.simulator \
   its text, then its button; quick reply buttons last). The chat page prints each button's number.
   A card button that sends a postback or a quick reply button that sends a text is sent to the
   agent like LINE sends it. An `open_liff` step opens the LIFF page a card links to as a
-  member (`from`, the first member when left out) and takes its picture. Image paths are read
-  from the scenario file's folder.
+  member (`from`, the first member when left out) and takes its picture. A `wait_seconds` step
+  waits in real time; an `advance_minutes` step moves the agent's clock forward by that many
+  minutes (1 to 129,600) and runs its timed work once, so a reminder that has come due is sent and
+  shows in the chat as a push. Image paths are read from the scenario file's folder.
 - **Results.** `--out` gets `index.html` (every scenario with its steps, seconds and spend) and a
   folder per scenario: `transcript.json` (each step's input, the agent's raw replies and pushes,
   seconds, and spend), `chat.html` (a phone-width talk: names and bubbles, text, Flex cards and

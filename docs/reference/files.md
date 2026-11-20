@@ -90,6 +90,19 @@ A file written by an earlier version, `{"text": …, "saved_at": …, "versions"
 read: its text becomes `legacy_text` (kept beside the items) and the file is written in the
 shape above at the next change.
 
+## `groups/<groupId>/reminders.json`
+
+The group's [reminders](group-tools.md#reminders), replaced whole at each change. `due_at` is
+the time to send, with its offset (Japan time); `state` is `pending`, `sent`, `missed` (the
+agent was down for more than 30 minutes past the time) or `failed` (the send failed twice);
+`attempts` counts the failed sends. A cancelled reminder is removed; one that is no longer
+`pending` is kept for 40 days so the month's count can be told. `last_number` keeps ids from
+being used twice:
+
+```json
+{"last_number": 2, "reminders": [{"id": "r2", "text": "Gather at the station", "due_at": "2026-11-20T21:00+09:00", "names": ["Aki"], "created_at": "2026-11-18T12:00:00+09:00", "state": "pending", "attempts": 0}]}
+```
+
 ## `groups/<groupId>/spend.json`
 
 The group's month, in the same form as `spend.json` below. Its `limit` is the overall limit

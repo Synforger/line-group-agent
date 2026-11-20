@@ -221,6 +221,18 @@ def test_the_counts_cannot_be_below_their_minimum(tmp_path: Path, key: str) -> N
             make_config(tmp_path, **{key: 0})
 
 
+def test_the_monthly_reminder_count_defaults_to_ten_and_can_be_set_down_to_zero(
+    tmp_path: Path,
+) -> None:
+    assert make_config(tmp_path).max_reminders_per_group_per_month == 10
+    config = make_config(tmp_path, max_reminders_per_group_per_month=0)
+    assert config.max_reminders_per_group_per_month == 0
+    with pytest.raises(ConfigError, match="max_reminders_per_group_per_month"):
+        make_config(tmp_path, max_reminders_per_group_per_month=-1)
+    with pytest.raises(ConfigError, match="max_reminders_per_group_per_month"):
+        make_config(tmp_path, max_reminders_per_group_per_month="ten")
+
+
 def test_the_itinerary_keywords_default_to_one_word_and_can_be_listed(tmp_path: Path) -> None:
     assert make_config(tmp_path).itinerary_keywords == ("itinerary",)
     config = make_config(tmp_path, itinerary_keywords=[" しおり ", "plan"])

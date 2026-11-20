@@ -35,6 +35,7 @@
   "error_text": "Something went wrong, so I could not answer. Please try again in a bit.",
   "wait_text": "Looking that up, one moment.",
   "wait_min_push_left": 20,
+  "max_reminders_per_group_per_month": 10,
   "max_mentions_per_user_per_hour": 20,
   "rate_limit_text": "You have asked a lot in the last hour. Please try again a little later.",
   "retention_days": 30,

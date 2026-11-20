@@ -1,10 +1,13 @@
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from line_group_agent.reminders.reminder import GROUP_TIME_ZONE
 from line_group_agent.simulator.scenario import (
     ActionRef,
+    AdvanceStep,
     ImageStep,
     LocationStep,
     OpenLiffStep,
@@ -212,3 +215,38 @@ async def test_what_a_scenario_spends_is_added_to_the_months_figure_and_the_limi
     ledger.add(config.budget.monthly_limit)
     with pytest.raises(SimulationError, match="used up"):
         await run_simulation(config, [first], tmp_path / "out2", NO_SCREENS)
+
+
+async def test_a_reminder_set_in_the_scenario_is_sent_when_the_clock_is_moved_past_its_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    due = (datetime.now(GROUP_TIME_ZONE) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    call = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "set_reminder",
+        "input": {"when": due, "text": "Gather at the station", "who": ["Ben"]},
+    }
+    use_scripted_model(
+        monkeypatch,
+        [answer([call], stop_reason="tool_use"), text_answer("<reply>I will remind you.</reply>")],
+    )
+    [transcript] = await run_simulation(
+        bot_config(tmp_path),
+        [
+            scenario_of(
+                TextStep(AKI.user_id, "remind us in two hours", mention=True),
+                AdvanceStep(60),
+                AdvanceStep(61),
+            )
+        ],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    asked, early, on_time = transcript.steps
+    assert asked.error is None and asked.outputs[0].messages[0]["text"] == "I will remind you."
+    assert early.error is None and early.outputs == []
+    assert on_time.error is None and on_time.shown == {"type": "advance", "minutes": 61}
+    [push] = on_time.outputs
+    assert push.kind == "push" and push.messages[0]["text"] == "@Ben Gather at the station"
+    assert "+61 min" in (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")

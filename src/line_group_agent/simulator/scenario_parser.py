@@ -14,6 +14,7 @@ from line_group_agent.simulator.scenario import (
     DEFAULT_BOT_NAME,
     DEFAULT_BOT_USER_ID,
     ActionRef,
+    AdvanceStep,
     Group,
     ImageStep,
     LocationStep,
@@ -27,6 +28,7 @@ from line_group_agent.simulator.scenario import (
 )
 
 MAX_WAIT_SECONDS = 600.0
+MAX_ADVANCE_MINUTES = 60 * 24 * 90
 
 
 class ScenarioError(ValueError):
@@ -81,6 +83,15 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
         if not 0 <= seconds <= MAX_WAIT_SECONDS:
             raise ScenarioError(f"{where}: wait_seconds must be between 0 and {MAX_WAIT_SECONDS}")
         return WaitStep(float(seconds))
+    if "advance_minutes" in step:
+        minutes = step["advance_minutes"]
+        if isinstance(minutes, bool) or not isinstance(minutes, int):
+            raise ScenarioError(f"{where}: advance_minutes must be a whole number")
+        if not 1 <= minutes <= MAX_ADVANCE_MINUTES:
+            raise ScenarioError(
+                f"{where}: advance_minutes must be between 1 and {MAX_ADVANCE_MINUTES}"
+            )
+        return AdvanceStep(minutes)
     sender = step.get("from", member_ids[0] if "open_liff" in step else None)
     if sender not in member_ids:
         raise ScenarioError(f"{where}: from must be the user_id of a member of the group")
@@ -98,7 +109,8 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
     if "open_liff" in step:
         return OpenLiffStep(sender, _parse_target(step["open_liff"], where))
     raise ScenarioError(
-        f"{where}: needs one of text, image, location, press, open_liff or wait_seconds"
+        f"{where}: needs one of text, image, location, press, open_liff, wait_seconds "
+        "or advance_minutes"
     )
 
 

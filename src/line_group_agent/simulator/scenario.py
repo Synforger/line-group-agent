@@ -92,7 +92,15 @@ class WaitStep:
     seconds: float
 
 
-Step = TextStep | ImageStep | LocationStep | PressStep | OpenLiffStep | WaitStep
+@dataclass(frozen=True)
+class AdvanceStep:
+    """Move the bot's clock forward by `minutes` and let it run its timed work once (the
+    reminders that come due are sent)."""
+
+    minutes: int
+
+
+Step = TextStep | ImageStep | LocationStep | PressStep | OpenLiffStep | WaitStep | AdvanceStep
 
 
 @dataclass(frozen=True)

@@ -53,6 +53,10 @@ from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog
 from line_group_agent.records.retention_sweeper import RetentionSweeper
 from line_group_agent.records.summary_journal import SummaryJournal
+from line_group_agent.reminders.push_left import PushLeft
+from line_group_agent.reminders.reminder_book import ReminderBook
+from line_group_agent.reminders.reminder_sender import ROUND_INTERVAL_SECONDS, ReminderSender
+from line_group_agent.reminders.reminder_tools import reminder_tools
 from line_group_agent.service.patrol import Patrol
 from line_group_agent.spend.spend_books import SpendBooks
 from line_group_agent.spend.spend_ledger import SpendLedger
@@ -63,17 +67,16 @@ ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_TIMEOUT_SECONDS = 300.0
 
 
-def build_app(config: AgentConfig) -> FastAPI:
-    """Read the secrets and the persona, open the records, and return the web app."""
+def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) -> FastAPI:
+    """Read the secrets and the persona, open the records, and return the web app. `clock`
+    is the bot's time (the simulator moves it); without one it is the machine's."""
     secrets = load_secrets(config)
     try:
         persona = config.persona_file.read_text(encoding="utf-8")
     except OSError as error:
         raise ConfigError(f"cannot read persona_file: {error.strerror}") from error
 
-    def clock() -> datetime:
-        return datetime.now().astimezone()
-
+    clock = clock or _machine_time
     intro = _read_intro(config)
     settings = SettingsStore(config.settings_file)
     group_log = GroupLog(config.state_dir)
@@ -94,11 +97,22 @@ def build_app(config: AgentConfig) -> FastAPI:
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
     polls = PollBook(config.state_dir, clock)
     itineraries = ItineraryBook(config.state_dir, clock)
+    push_quota = PushQuota(line)
+    push_left = PushLeft(push_quota)
+    reminders = ReminderBook(config.state_dir, clock)
+    reminder_sender = ReminderSender(reminders, line, push_left, clock)
     client_tools = ClientTools(
         [
             *poll_tools(polls, liff_id=config.liff_id),
             *itinerary_tools(itineraries, liff_id=config.liff_id, clock=clock),
             *bill_tools(),
+            *reminder_tools(
+                reminders,
+                push_left,
+                max_per_month=config.max_reminders_per_group_per_month,
+                min_push_left=config.wait_min_push_left,
+                clock=clock,
+            ),
         ]
     )
     caller = ModelCaller(
@@ -163,7 +177,7 @@ def build_app(config: AgentConfig) -> FastAPI:
         limiter=MentionLimiter(config.max_mentions_per_user_per_hour),
         wait_notice=WaitNotice(
             line,
-            PushQuota(line),
+            push_quota,
             config.wait_text,
             min_push_left=config.wait_min_push_left,
         ),
@@ -182,12 +196,21 @@ def build_app(config: AgentConfig) -> FastAPI:
         config.max_body_bytes,
         dispatcher,
         on_close=closers,
-        background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
+        background=[
+            Patrol(watcher.patrol, config.patrol_interval_seconds),
+            Patrol(reminder_sender.send_due, ROUND_INTERVAL_SECONDS),
+        ],
         routers=routers,
     )
     # Read-only handle for a runner that must know when every queued event is handled.
     app.state.event_sink = dispatcher
+    # A runner that moves the clock runs a reminder round itself, without waiting a minute.
+    app.state.run_reminder_round = reminder_sender.send_due
     return app
+
+
+def _machine_time() -> datetime:
+    return datetime.now().astimezone()
 
 
 def _liff_routers(
