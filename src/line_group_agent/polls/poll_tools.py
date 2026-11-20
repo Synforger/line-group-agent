@@ -15,6 +15,7 @@ from typing import Any
 
 from line_group_agent._common.one_line import one_line
 from line_group_agent.agent.client_tool import ClientTool, ToolOutcome, ToolTurn
+from line_group_agent.agent.turn_output import TurnOutput
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.polls.poll import KIND_CHOICE, KIND_DATE, Poll
 from line_group_agent.polls.poll_book import PollBook, VoteResult
@@ -37,6 +38,7 @@ NO_POLL_RESULT = "There is no such poll in this group."
 CLOSED_POLL_RESULT = "That poll is closed, so votes can no longer change."
 UNKNOWN_MEMBER_RESULT = "The member who asked cannot be identified, so no vote was taken back."
 NO_VOTE_RESULT = "That member has no vote in the poll, so nothing was taken back."
+NO_TEST_POLL_SENTENCE = "Do not make a poll to test the tools."
 BAD_OPTIONS_RESULT = (
     f"Give a question and {MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different, non-empty options."
 )
@@ -93,7 +95,10 @@ def poll_tools(book: PollBook, *, liff_id: str | None = None) -> list[ClientTool
         poll = book.close(turn.group_id, _poll_id_of(tool_input))
         if poll is None:
             return ToolOutcome("There is no open poll to close.", is_error=True)
-        return ToolOutcome(f"Poll {poll.id} is closed. Final count:\n{format_poll_results(poll)}")
+        result = f"Poll {poll.id} is closed. Final count:\n{format_poll_results(poll)}"
+        if _drop_card_of(poll, turn.output):
+            result += "\nIts card was made in this same reply, so it is not sent."
+        return ToolOutcome(result)
 
     def withdraw(tool_input: object, turn: ToolTurn) -> ToolOutcome:
         poll = book.get(turn.group_id, _poll_id_of(tool_input))
@@ -134,6 +139,16 @@ def _extra_of(poll: Poll, liff_id: str | None) -> OutgoingExtra:
     return OutgoingExtra(build_poll_message(poll, liff_id=liff_id), poll_record_line(poll))
 
 
+def _drop_card_of(poll: Poll, output: TurnOutput) -> bool:
+    """Take the card of `poll` out of the reply when this turn made it (a poll made and closed
+    in the same reply has nothing left to vote on). Return whether a card was taken out."""
+    record_line = poll_record_line(poll)
+    kept = [extra for extra in output.extras if extra.record_line != record_line]
+    is_dropped = len(kept) < len(output.extras)
+    output.extras[:] = kept
+    return is_dropped
+
+
 def _poll_id_of(tool_input: object) -> str | None:
     poll_id = tool_input.get("poll_id") if isinstance(tool_input, dict) else None
     return poll_id if isinstance(poll_id, str) and poll_id.strip() else None
@@ -147,7 +162,8 @@ def _create_definition() -> dict[str, Any]:
             "from it by pressing an option's button or the button that opens the voting page, "
             "one vote each (or several with multiple). Picking the option already picked "
             "changes nothing in a one-vote poll; a member takes a vote back by asking you "
-            "(withdraw_vote). Use it when a member asks for a vote. Write a short sentence "
+            "(withdraw_vote). Use it when a member asks for a vote. "
+            f"{NO_TEST_POLL_SENTENCE} Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} options of at most "
             f"{OPTION_MAX_CHARS} characters each."
         ),
@@ -180,8 +196,8 @@ def _create_date_definition() -> dict[str, Any]:
             "Find a date that suits everyone. It is sent as a card after your reply, with a "
             "button per candidate date or one that opens the voting page; a member marks every "
             "date that suits them, and marks again to take it back. Use it when members need "
-            "to agree on a date. poll_results then gives each date's count and names. Write "
-            "a short sentence "
+            "to agree on a date. poll_results then gives each date's count and names. "
+            f"{NO_TEST_POLL_SENTENCE} Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} dates of at most "
             f"{OPTION_MAX_CHARS} characters each, like 11/23(Sat)."
         ),
