@@ -261,7 +261,7 @@ uv run python -m line_group_agent.simulator \
       {"from": "Uben", "text": "Somewhere with temples", "mention": true},
       {"from": "Uaki", "press": {"reply_index": 0, "action_index": 1}},
       {"open_liff": {"reply_index": 0, "action_index": 0}},
-      {"from": "Uben", "liff_click": {"reply_index": 0, "action_index": 0, "selector": "button"}},
+      {"from": "Uben", "liff_click": {"reply_index": 0, "action_index": 0, "selector": "#options button"}},
       {"from": "Uben", "image": "menu.jpg"},
       {"from": "Uaki", "location": {"title": "Cafe", "address": "Kyoto", "latitude": 35.01, "longitude": 135.76}},
       {"from": "Uben", "sticker": {"package_id": "8515", "sticker_id": "16581243", "keywords": ["thanks"]}},
