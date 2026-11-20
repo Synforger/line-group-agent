@@ -29,6 +29,7 @@ from line_group_agent.simulator.scenario import (
     ActionRef,
     AdvanceStep,
     ImageStep,
+    LiffClickStep,
     LocationStep,
     OpenLiffStep,
     PressStep,
@@ -222,8 +223,10 @@ class ScenarioRunner:
             await self._send(event, record)
         elif isinstance(step, PressStep):
             await self._press(step, record)
+        elif isinstance(step, OpenLiffStep):
+            await self._visit_liff(step, record)
         else:
-            await self._open_liff(step, record)
+            await self._visit_liff(step, record, click=step.selector)
 
     async def _press(self, step: PressStep, record: StepRecord) -> None:
         action = self._action_of(step.target)
@@ -247,21 +250,39 @@ class ScenarioRunner:
             raise StepProblem(f"cannot press an action of type {kind!r}")
         await self._send(event, record)
 
-    async def _open_liff(self, step: OpenLiffStep, record: StepRecord) -> None:
+    async def _visit_liff(
+        self, step: OpenLiffStep | LiffClickStep, record: StepRecord, click: str | None = None
+    ) -> None:
+        """Open the page the action links to as the member, press `click` in it when given,
+        and say in the chat what the page had sent as the member, which the bot then gets
+        like any message the member wrote."""
         action = self._action_of(step.target)
         address = urlsplit(str(action.get("uri", "")))
         if action.get("type") != "uri" or address.hostname != LIFF_HOST:
             raise StepProblem("the action is not a link to a LIFF page")
         page_url = f"{self._bot_url}{liff_page_path(address.path)}?{address.query}"
         record.shown = {"type": "open_liff", "url": str(action["uri"])}
+        if click is not None:
+            record.shown = {"type": "liff_click", "url": str(action["uri"]), "selector": click}
         if self._screens is None:
             record.note = "screens are off: the page was not opened"
             return
         member = self.scenario.member_named(step.sender)
         token = make_id_token(member.user_id, member.name)
         path = self._screens_dir / f"step-{record.index:02d}-liff.png"
-        record.note = await self._screens.capture_liff(page_url, token, path)
+        visit = await self._screens.capture_liff(
+            page_url, token, path, click=() if click is None else (click,)
+        )
+        record.note = visit.note
         record.screen = f"screens/{path.name}"
+        record.liff_sent = visit.sent
+        record.liff_shared = visit.shared
+        for message in visit.sent:
+            if message.get("type") == "text":
+                event = text_event(
+                    self.scenario.group.id, step.sender, str(message["text"]), self._new_ids()
+                )
+                await self._send(event, record)
 
     def _action_of(self, target: ActionRef) -> dict[str, Any]:
         sent = self._line.sent_calls()
@@ -349,6 +370,7 @@ def _kind_of(step: Step) -> str:
         LocationStep: "location",
         PressStep: "press",
         OpenLiffStep: "open_liff",
+        LiffClickStep: "liff_click",
         WaitStep: "wait",
         AdvanceStep: "advance",
     }[type(step)]

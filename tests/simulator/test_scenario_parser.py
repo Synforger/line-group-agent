@@ -7,6 +7,7 @@ from line_group_agent.simulator.scenario import (
     ActionRef,
     AdvanceStep,
     ImageStep,
+    LiffClickStep,
     LocationStep,
     OpenLiffStep,
     PressStep,
@@ -39,6 +40,10 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
             {"from": "Ua", "location": {"title": "Cafe", "latitude": 35, "longitude": 135.5}},
             {"from": "Ub", "press": {"reply_index": 0, "action_index": 2}},
             {"open_liff": {"reply_index": 1, "action_index": 0}},
+            {
+                "from": "Ub",
+                "liff_click": {"reply_index": 1, "action_index": 0, "selector": "#share"},
+            },
             {"wait_seconds": 2},
             {"advance_minutes": 90},
         ),
@@ -51,6 +56,7 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
         LocationStep("Ua", "Cafe", "", 35.0, 135.5),
         PressStep("Ub", ActionRef(0, 2)),
         OpenLiffStep("Ua", ActionRef(1, 0)),
+        LiffClickStep("Ub", ActionRef(1, 0), "#share"),
         WaitStep(2.0),
         AdvanceStep(90),
     )
@@ -75,6 +81,8 @@ def test_the_bot_can_be_given_a_name() -> None:
         ({"from": "Ua", "location": {"latitude": "x", "longitude": 1}}, "latitude"),
         ({"from": "Ua", "press": {"reply_index": -1, "action_index": 0}}, "reply_index"),
         ({"from": "Ua", "press": {"reply_index": 0}}, "action_index"),
+        ({"from": "Ua", "liff_click": {"reply_index": 0, "action_index": 0}}, "selector"),
+        ({"from": "Ua", "liff_click": {"selector": "#share"}}, "reply_index"),
         ({"wait_seconds": "soon"}, "wait_seconds must be a number"),
         ({"wait_seconds": 100000}, "wait_seconds must be between"),
         ({"advance_minutes": "soon"}, "advance_minutes must be a whole number"),
@@ -113,3 +121,9 @@ def test_a_bad_scenario_is_refused(changes: dict[str, Any], message: str) -> Non
 def test_something_that_is_not_an_object_is_refused() -> None:
     with pytest.raises(ScenarioError, match="must be a JSON object"):
         parse_scenario([1], Path("."), "trip")
+
+
+def test_a_click_in_a_page_is_by_the_first_member_unless_another_is_named() -> None:
+    click = {"reply_index": 0, "action_index": 1, "selector": ".option"}
+    scenario = parse_scenario(document({"liff_click": click}), Path("."), "trip")
+    assert scenario.steps == (LiffClickStep("Ua", ActionRef(0, 1), ".option"),)

@@ -3,13 +3,16 @@ pages the bot serves.
 
 LINE's LIFF SDK is replaced by a small stand-in (`liff_sdk_stub.js`) so a page opens outside
 LINE as a chosen member, and every address outside this machine is refused so a page cannot
-reach the network. Called by the simulation. The browser is closed with a close request and
-awaited, never killed.
+reach the network. The stand-in writes down what a page asked it to send or share, and a
+visit can press one thing in the page first. Called by the simulation. The browser is closed
+with a close request and awaited, never killed.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,11 +27,26 @@ LIFF_SCALE = 2
 CHAT_SCALE = 1
 PAGE_TIMEOUT_MS = 20000
 SETTLE_MS = 600
+CLICK_TIMEOUT_MS = 3000
 PROBLEM_SCRIPT = "(document.getElementById('problem') || {}).textContent || ''"
+CALLS_SCRIPT = "window.__liffCalls || {sent: [], shared: []}"
+STUB_CONFIG_SCRIPT = "window.__liffStubConfig = {config};"
 
 
 class ScreensUnavailableError(RuntimeError):
     """Playwright or its browser is not installed."""
+
+
+@dataclass
+class LiffVisit:
+    """What a visit to a LIFF page left: `note` is what the page said was wrong (or the errors
+    it logged), None when it looked well; `sent` the messages the page had `liff.sendMessages`
+    send as the member; `shared` what it passed to `liff.shareTargetPicker`, each as
+    `{"messages": [...], "options": {...}}`."""
+
+    note: str | None
+    sent: list[dict[str, Any]] = field(default_factory=list)
+    shared: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ScreenCapture:
@@ -83,10 +101,19 @@ class ScreenCapture:
         finally:
             await context.close()
 
-    async def capture_liff(self, page_url: str, id_token: str, png_file: Path) -> str | None:
-        """Open a LIFF page of the bot as the member the token names, take a picture of the
-        whole page and return what the page said was wrong (or the errors it logged), or None
-        when it looked well."""
+    async def capture_liff(
+        self,
+        page_url: str,
+        id_token: str,
+        png_file: Path,
+        *,
+        click: Sequence[str] = (),
+        environment: Mapping[str, Any] | None = None,
+    ) -> LiffVisit:
+        """Open a LIFF page of the bot as the member the token names, press the elements the CSS
+        selectors in `click` name one after the other, take a picture of the whole page and
+        return what the visit left. `environment` changes where the page seems to be open
+        (see `liff_sdk_stub.js`)."""
         context = await self._browser.new_context(
             viewport={"width": PHONE_WIDTH, "height": PHONE_HEIGHT},
             device_scale_factor=LIFF_SCALE,
@@ -102,16 +129,35 @@ class ScreenCapture:
                 LIFF_SDK_URL,
                 lambda route: route.fulfill(body=stub, content_type="application/javascript"),
             )
+            if environment:
+                await page.add_init_script(
+                    STUB_CONFIG_SCRIPT.format(config=json.dumps(dict(environment)))
+                )
             await page.goto(page_url, wait_until="networkidle", timeout=PAGE_TIMEOUT_MS)
             await page.wait_for_timeout(SETTLE_MS)
+            for selector in click:
+                if not await self._press(page, selector, problems):
+                    break
             said = str(await page.evaluate(PROBLEM_SCRIPT)).strip()
             if said:
                 problems.insert(0, f"the page says: {said}")
+            calls = await page.evaluate(CALLS_SCRIPT)
             png_file.parent.mkdir(parents=True, exist_ok=True)
             await page.screenshot(path=str(png_file), full_page=True)
         finally:
             await context.close()
-        return "; ".join(problems) or None
+        return LiffVisit("; ".join(problems) or None, calls["sent"], calls["shared"])
+
+    async def _press(self, page: Any, selector: str, problems: list[str]) -> bool:
+        """Press the element and wait for the page to settle; False when it could not be pressed."""
+        try:
+            await page.locator(selector).first.click(timeout=CLICK_TIMEOUT_MS)
+        except Exception as error:  # Playwright's own errors (a missing or covered element)
+            problems.append(f"could not press {selector!r} ({type(error).__name__})")
+            return False
+        await page.wait_for_load_state("networkidle")
+        await page.wait_for_timeout(SETTLE_MS)
+        return True
 
 
 async def _refuse(route: Any) -> None:

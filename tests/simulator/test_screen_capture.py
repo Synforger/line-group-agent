@@ -3,7 +3,6 @@ not installed (`uv run playwright install chromium`)."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,7 @@ from fastapi.responses import HTMLResponse
 
 from line_group_agent.simulator.id_token import make_id_token
 from line_group_agent.simulator.local_server import LocalServer
-from line_group_agent.simulator.screen_capture import ScreenCapture, ScreensUnavailableError
+from line_group_agent.simulator.screen_capture import ScreenCapture
 
 pytestmark = pytest.mark.anyio
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -30,19 +29,6 @@ Promise.all([
 </script></body></html>"""
 
 
-@pytest.fixture
-async def screens() -> AsyncIterator[ScreenCapture]:
-    capture = ScreenCapture()
-    try:
-        await capture.open()
-    except ScreensUnavailableError as error:
-        pytest.skip(str(error))
-    try:
-        yield capture
-    finally:
-        await capture.close()
-
-
 async def test_a_page_opens_as_the_member_with_the_sdk_stand_in_and_no_outside_network(
     screens: ScreenCapture, tmp_path: Path
 ) -> None:
@@ -56,13 +42,14 @@ async def test_a_page_opens_as_the_member_with_the_sdk_stand_in_and_no_outside_n
     await server.start()
     try:
         picture = tmp_path / "screens" / "page.png"
-        note = await screens.capture_liff(
+        visit = await screens.capture_liff(
             f"{server.base_url}/page", make_id_token("Uaki", "Aki"), picture
         )
     finally:
         await server.stop()
     assert picture.read_bytes().startswith(PNG_SIGNATURE)
-    assert note == "the page says: Aki:true:token:blocked"
+    assert visit.note == "the page says: Aki:true:token:blocked"
+    assert visit.sent == [] and visit.shared == []
 
 
 async def test_the_chat_page_is_photographed_whole(screens: ScreenCapture, tmp_path: Path) -> None:

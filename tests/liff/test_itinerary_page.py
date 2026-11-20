@@ -30,7 +30,9 @@ def test_the_page_is_one_file_that_draws_with_text_only() -> None:
 
 def test_the_page_loads_nothing_from_outside_but_the_liff_sdk() -> None:
     hosts = set(re.findall(r"https://([a-z.-]+)", source()))
-    assert hosts == {"static.line-scdn.net"}
+    # liff.line.me is only the address written into the message shared to another chat.
+    assert hosts == {"static.line-scdn.net", "liff.line.me"}
+    assert source().count('"https://liff.line.me/"') == 1
 
 
 def test_the_page_reads_the_plan_by_a_post_with_the_bearer_token_not_by_its_address() -> None:

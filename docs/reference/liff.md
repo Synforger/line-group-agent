@@ -2,14 +2,16 @@
 
 With a LIFF app configured the agent serves two pages that open inside LINE: the voting page
 for a poll and the [itinerary page](#the-itinerary-page) for the trip itinerary. Both read the
-same settings and the same checks (see [What the agent promises](#what-the-agent-promises)).
+same settings and the same checks (see [What the agent promises](#what-the-agent-promises)),
+and both can [send the page on to another chat](#sending-a-page-to-another-chat).
 
 ## The voting page
 
 With a LIFF app configured, a poll card does not carry a button per option. It lists the
 options with their counts and has one button, **開いて投票**, that opens a page inside LINE.
 There a vote is a tap that paints the option, grows its bar and shows who voted for what, and
-**nothing is posted to the talk**. Without a LIFF app the poll cards work as described in
+**nothing is posted to the talk** unless the voter lets the page say so
+([below](#telling-the-talk)). Without a LIFF app the poll cards work as described in
 [Polls](group-tools.md#polls) and none of this exists.
 
 ### What the page shows
@@ -28,6 +30,23 @@ There a vote is a tap that paints the option, grows its bar and shows who voted 
 
 Votes made on the page and votes made by pressing a button of an older card land in the same
 poll, and the bot's `poll_results` reads both.
+
+### Telling the talk
+
+After a vote has been recorded the page can say so in the talk, **as the voter's own message**
+(LIFF's `liff.sendMessages`): `<option> に入れたよ`, or `<day> が行けるよ` for a date poll. It
+sends only when the press picked an option that was not the voter's before; taking a pick back,
+or pressing the option already picked, sends nothing.
+
+- A check **トークに知らせる** sits under the options, on by default. The device remembers the
+  choice (in the page's local storage)
+- Where the page cannot send, the check is not shown and nothing is sent, with no message: when
+  it is opened in an external browser, from a screen that is not a talk (the Services tab, for
+  one), when the user has not granted `chat_message.write`, or when the LIFF app does not have
+  that scope. If LINE refuses a send (for example the page was reopened from the recently used
+  services), the vote stands and nothing is said
+- The agent reads that one-liner like any message in the talk. It carries no name the agent
+  answers to, so it does not answer it, and nothing is spent on it
 
 ## The itinerary page
 
@@ -65,6 +84,24 @@ the ID token, the limits on failed verifies and on a member's requests, the link
 and the member's place in the group; a link of another group, an unknown link and a member who
 is not in the group all give the same **403**.
 
+## Sending a page to another chat
+
+Both pages have a **ほかのトークに送る** button, shown only when `liff.isApiAvailable('shareTargetPicker')`
+is true. It opens LINE's own screen for choosing the chats (friends, groups, multi-person
+chats), and sends one Flex message with a single button that opens the page:
+
+| Page | The message shows | The button |
+|---|---|---|
+| Voting page | the question and its options | **投票を開く**, the poll's own link (`https://liff.line.me/<liff_id>?p=<link id>`) |
+| Itinerary page | the trip's name and the next three items (those not over yet, `11/23 09:00 title`; the day number when the trip has no dates) | **予定表を開く**, the itinerary's own link (`https://liff.line.me/<liff_id>/itinerary?i=<link id>`) |
+
+The page tells the sender in small print that people who are not in the group cannot open it.
+That is the existing check and nothing new: whoever opens the link must be a member of the
+group the poll or the itinerary belongs to; anyone else gets the same **403** as any unknown
+link (see [What the agent promises](#what-the-agent-promises)). The message itself holds the
+question and the options (or the item titles) in plain text, so it shows what the sender chose
+to send, to the chat they chose.
+
 ## Settings
 
 | Setting | Default | Meaning |
@@ -87,12 +124,18 @@ keeps working through its card.
    is the same in both only within one provider; the agent compares it with the group's
    members.)
 2. On the Login channel's **LIFF** tab add an app: **Endpoint URL**
-   `https://<your-host>/liff/`, scope `openid`, size as you like (Full suits it). Copy the
-   LIFF ID.
+   `https://<your-host>/liff/`, scopes `openid` and `chat_message.write` (the second is only for
+   [telling the talk](#telling-the-talk); without it the page works, minus the check), size as
+   you like (Full suits it). Copy the LIFF ID. On an app you already made, the scopes can be
+   changed in the same place.
 3. Make `https://<your-host>/liff/` and `https://<your-host>/liff/api/` reach the same
    address as the webhook (`http://127.0.0.1:8790`), by the same reverse proxy or tunnel.
 4. Put the LIFF ID in `liff_id` and the Login channel's ID in `login_channel_id`, and
    restart.
+5. For [sending a page to another chat](#sending-a-page-to-another-chat), on the same channel's
+   **LIFF** tab click **shareTargetPicker**; the "Agreement Regarding Use of Information" is
+   shown: check **I have read and agree to the Agreement Regarding Use of Information** and
+   click **Enable**. It is asked once for each channel. Until then the button is not shown.
 
 The card's button opens `https://liff.line.me/<liff_id>?p=<link id>`. The link id is made for
 each poll from 128 random bits; the group's id is never in an address.
@@ -144,3 +187,21 @@ one-word error and no detail. The log holds statuses only, never a token, a link
 or what was sent.
 
 The page may not be cached, sends no `Referer`, and sets names and options only as text.
+
+## Trying it in the simulator
+
+The simulator's LIFF SDK stand-in (`src/line_group_agent/simulator/liff_sdk_stub.js`) has `sendMessages`,
+`shareTargetPicker`, `isApiAvailable`, `getContext` and `permission.query`. It refuses what
+LINE refuses (more than five messages, a sticker in a share, an action other than a link in a
+Flex message, a text of 5,000 characters or more) and writes every call down. A scenario step
+
+```json
+{"from": "<member>", "liff_click": {"reply_index": 0, "action_index": 0, "selector": "#options li:nth-child(2) button"}}
+```
+
+opens the page a card links to (as `open_liff` does), presses the element the CSS selector names
+and takes the picture after it. What the page sent is said in the chat as that member's message
+and goes to the agent as a webhook event, so the agent's silence on it is part of the run; what
+the page passed to the share target picker is drawn in the chat as the message the receiving
+chat would get. Both are also in `transcript.json` (`liff_sent`, `liff_shared`). Run with
+`with_screens` off, the step is only noted.

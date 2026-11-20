@@ -134,3 +134,47 @@ def test_the_page_loads_nothing_from_outside() -> None:
     html = page_of(step(0, "text", {"type": "text", "text": "hi"}))
     assert "http://" not in html and "https://" not in html
     assert "<script" not in html
+
+
+def test_a_click_in_a_page_shows_what_it_sent_as_the_members_message_and_what_it_shared() -> None:
+    card = {
+        "type": "flex",
+        "altText": "alt",
+        "contents": {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [{"type": "text", "text": "Where to?"}],
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {"type": "uri", "label": "Open", "uri": "https://x"},
+                    }
+                ],
+            },
+        },
+    }
+    html = page_of(
+        step(
+            0,
+            "liff_click",
+            {"type": "liff_click", "url": "https://liff.line.me/x?p=y", "selector": "#share"},
+            liff_sent=[{"type": "text", "text": "Osaka に入れたよ"}],
+            liff_shared=[{"messages": [card], "options": {"isMultiple": True}}],
+        )
+    )
+    assert "Aki pressed <code>#share</code> in the page" in html
+    assert 'class="bubble">Osaka に入れたよ<' in html
+    assert "Aki → another chat (share target picker)" in html
+    assert "Where to?" in html and ">Open<" in html
+    assert "step 0 · 1.5s · no reply" in html
+
+
+def test_a_click_that_sent_nothing_is_not_called_silence() -> None:
+    html = page_of(step(0, "liff_click", {"type": "liff_click", "url": "u", "selector": "#a"}))
+    assert "no reply" not in html
