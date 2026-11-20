@@ -370,3 +370,18 @@ async def test_a_text_too_long_for_a_text_v2_message_is_sent_plain_and_cut() -> 
     await line.reply("rt", text, mentionable={"Aki": "Uaki"})
     [message] = json.loads(seen[0].content)["messages"]
     assert message["type"] == "text" and len(message["text"]) == 5000
+
+
+async def test_member_count_is_read_from_the_members_count_call() -> None:
+    line, seen = client_answering(200, {"count": 5})
+    assert await line.get_member_count("Cg") == 5
+    assert seen[0].method == "GET" and seen[0].url.path == "/v2/bot/group/Cg/members/count"
+
+
+async def test_member_count_is_none_when_line_does_not_give_it() -> None:
+    line, _ = client_answering(403)
+    assert await line.get_member_count("Cg") is None
+    line, _ = client_answering(200, {"count": "many"})
+    assert await line.get_member_count("Cg") is None
+    line, _ = client_answering(200, {})
+    assert await line.get_member_count("Cg") is None

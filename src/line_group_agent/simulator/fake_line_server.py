@@ -144,6 +144,13 @@ class FakeLineServer:
             payload = {"memberIds": [person.user_id for person in self.group.members]}
             return self._answer(request, OTHER_KIND, HTTP_OK, None, "", payload)
 
+        @app.get("/v2/bot/group/{requested_group}/members/count")
+        async def member_count(request: Request, requested_group: str) -> Response:
+            if requested_group != group_id:
+                return self._answer(request, OTHER_KIND, HTTP_NOT_FOUND, None, "", {})
+            payload = {"count": len(self.group.members)}
+            return self._answer(request, OTHER_KIND, HTTP_OK, None, "", payload)
+
         @app.get("/v2/bot/group/{requested_group}/summary")
         async def summary(request: Request, requested_group: str) -> Response:
             if requested_group != group_id:

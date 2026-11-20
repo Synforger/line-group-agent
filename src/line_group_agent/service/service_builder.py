@@ -16,6 +16,7 @@ from fastapi import APIRouter, FastAPI
 
 from line_group_agent.agent.answerer import Answerer
 from line_group_agent.agent.client_tools import ClientTools
+from line_group_agent.agent.group_headcount import GroupHeadcount
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import build_system
@@ -147,6 +148,7 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
         client_tools=client_tools,
         photos=PhotoPicker(images, config.max_images_per_turn),
         card_images=card_images,
+        headcount=GroupHeadcount(line),
     )
     rollover = Rollover(config, caller, journal, books, settings, clock)
     retention = RetentionSweeper(conversations, group_log, config.retention_days, clock)

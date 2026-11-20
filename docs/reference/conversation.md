@@ -11,6 +11,10 @@ like a chat you keep open. It is kept in the group's record, so it survives a re
 - **Every later turn** carries what the group said since the bot's last turn (at most
   `max_catch_up_messages`; the bot's own replies are already in the conversation) and the
   message that mentioned the bot.
+- **Either way** a line gives the size of the group (LINE's count of its members, asked again
+  after an hour) and the names the group's record knows, so a member who has not spoken yet
+  is still counted, for example in a bill split. When LINE does not give the count, the line is
+  left out.
 - **Either way** the newest [photos](group-tools.md#photos) the group sent since the bot's last
   turn are attached as images.
 - The model's answers are kept exactly as the API sent them and sent back unchanged, and the
@@ -32,12 +36,18 @@ stop the group.
 With `call_name_anywhere` on, a message that holds a call name anywhere (not a LINE mention,
 and not at the start of a sentence or the end, which still call the bot as before) is added as a turn too. A name at the start that runs on into the words ("ソラって便利") is read the same way. The
 turn tells the model that the message may not be addressed to it, and gives it the tool
-`stay_silent`. When the model calls it, nothing is sent to the group and the bot's reply is
+`stay_silent`; the model answers when the member asks it to do or answer something ("ソラも〜して"), and stays silent only for talk about it, a reaction or a joke. When the model calls it, nothing is sent to the group and the bot's reply is
 not recorded, but the turn stays in the conversation: the bot remembers it read the message,
 and the next turn carries only what was said after it. A message that mentions the bot or
 has a name at either end is always answered; `stay_silent` is refused there. A turn that calls `stay_silent` together with other tools runs the other tools and answers. A reply written in the same turn as `stay_silent` is sent. The tool is
 sent with every request while the setting is on, so the start of the request, and with it the
 prompt cache, does not change from one turn to the next.
+
+## The same call twice in one answer
+
+When one answer of the model calls the same tool twice with the same input (the same JSON,
+whatever the order of the keys), the second call is not run: it gets a short result that says
+it was run once. This holds for every group tool, so a poll is not started twice.
 
 ## An answer without `<reply>`
 

@@ -167,7 +167,7 @@ async def test_a_vote_on_the_real_page_is_counted_and_its_one_liner_is_not_answe
     )
     clicked = transcript.steps[1]
     assert clicked.error is None and clicked.note is None
-    assert clicked.liff_sent == [{"type": "text", "text": "Osaka に入れたよ"}]
+    assert clicked.liff_sent == [{"type": "text", "text": "Osakaに入れたよ"}]
     assert clicked.outputs == [] and clicked.spend.amount == 0
     polls = json.loads(
         (config.state_dir / "scenarios/trip/groups" / GROUP_ID / "polls.json").read_text()

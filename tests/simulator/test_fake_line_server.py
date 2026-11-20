@@ -98,13 +98,15 @@ async def test_the_login_check_reads_the_member_out_of_a_token_it_knows() -> Non
     assert [call.path for call in server.calls].count("/oauth2/v2.1/verify") == 2
 
 
-async def test_the_member_list_and_the_loading_mark_are_answered() -> None:
+async def test_the_member_list_count_and_the_loading_mark_are_answered() -> None:
     server, _, _ = make_clients()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=server.app), base_url=ORIGIN
     ) as http:
         ids = await http.get(f"/v2/bot/group/{GROUP_ID}/members/ids")
         assert ids.json() == {"memberIds": [AKI.user_id, BEN.user_id]}
+        count = await http.get(f"/v2/bot/group/{GROUP_ID}/members/count")
+        assert count.json() == {"count": 2}
         loading = await http.post("/v2/bot/chat/loading/start", json={"chatId": AKI.user_id})
         assert loading.status_code == 202
 

@@ -1,5 +1,5 @@
 """The calls this agent makes to the LINE Messaging API: reply, push, member name,
-group name, membership check, leaving a group and the message quota.
+group name, member count, membership check, leaving a group and the message quota.
 
 A reply or push carries the answer's text (which can quote a message, and mention members
 by the `<mention>` marks in it), after it one Flex
@@ -160,6 +160,14 @@ class LineClient:
             return None
         name = response.json().get("groupName")
         return name if isinstance(name, str) and name else None
+
+    async def get_member_count(self, group_id: str) -> int | None:
+        """Return how many members the group has, or None when LINE does not give it."""
+        body = await self._get_json(f"/v2/bot/group/{group_id}/members/count")
+        count = (body or {}).get("count")
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            return count
+        return None
 
     async def get_message_content(self, message_id: str) -> tuple[bytes, str] | None:
         """Return the bytes and the content type of an image a member sent, or None when
