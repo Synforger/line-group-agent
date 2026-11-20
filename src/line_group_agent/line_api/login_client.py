@@ -25,10 +25,13 @@ VERIFY_PATH = "/oauth2/v2.1/verify"
 class LoginClient:
     """Asks LINE Login to verify ID tokens."""
 
-    def __init__(self, *, http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self, *, http_client: httpx.AsyncClient | None = None, base_url: str | None = None
+    ) -> None:
         # trust_env=False: no proxy or certificate settings from environment variables.
+        # A missing address is LINE's own; the settings may name another one (a stand-in).
         self._http = http_client or httpx.AsyncClient(
-            base_url=API_BASE_URL, timeout=REQUEST_TIMEOUT_SECONDS, trust_env=False
+            base_url=base_url or API_BASE_URL, timeout=REQUEST_TIMEOUT_SECONDS, trust_env=False
         )
 
     async def verify_id_token(self, id_token: str, client_id: str) -> dict[str, Any] | None:

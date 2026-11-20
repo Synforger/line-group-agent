@@ -190,6 +190,47 @@ agent は使った額を数えますが、料金は調べません。料金の�
 
 形は [`docs/reference/files.md`](docs/reference/files.md) にあります。
 
+## 試しの LINE
+
+LINE の口座も channel も外から届く HTTPS の宛先も無しに、台本どおりのグループの会話を本物の
+agent に流して、どう答えるかを見る道具です。LINE の API の代わりと agent (常駐と同じ code・
+空の state の folder・手元の別の port) を立て、署名つきの webhook を 1 step ずつ送り、agent が
+その 1 件を片づけるまで待って、返ってきた物を書き留めます。Claude の API は本物なので、流すと
+実際にお金がかかります。額は設定の `budget` で数えます。
+
+```bash
+uv sync --python 3.12                    # dev の道具に Playwright が入る
+uv run playwright install chromium       # 画面の写しのために 1 回だけ
+uv run python -m line_group_agent.simulator \
+  --config /path/to/simulator-config.json \
+  --scenario /path/to/scenarios \
+  --out /path/to/out
+```
+
+- **設定。** [`configs/simulator.example.json`](configs/simulator.example.json) から始めます。
+  ふつうの agent の設定です。LINE の secret の 2 file は何を書いても構いません (代わりの口は確かめません)。
+  Claude の key だけ本物が要ります。許す group・state の folder・LINE の宛先は、流すたびに
+  この道具が差し替えます。筋書きごとの state は `<state_dir>/scenarios/<筋書きの file 名>/` に置き、
+  同じ筋書きを次に流す時の最初に空にするので、毎回空のグループから始まります。筋書きが使った額は
+  `<state_dir>/spend.json` の今月の額に足され、次の筋書きは `budget.monthly_limit` の残りまでしか使えません。
+  `--max-usd` を付けると、その額を使った時点でその筋書きを止めます。
+- **筋書き。** JSON 1 file が 1 本。folder を渡すとその中の `*.json` を全部流します。形は上の英語の例のとおりです。
+  `group.id` は英数字だけ。`text` の step に `"mention": true` を付けると @メンションで呼んだ形になります
+  (`bot` の欄で名前と `user_id` を決められます)。付けなければ設定の `call_names` で呼ばれたかが決まります。
+  `press` は前の返事のボタンを押す step で、`reply_index` は agent が送った物 (reply と push)
+  を 0 から数えた番号、`action_index` はその返事の中のボタンを描かれる順 (カードの画像・文・ボタン、
+  最後に返事のボタン) に 0 から数えた番号です。chat の画面に各ボタンの番号が出ます。
+  `open_liff` はカードが開く LIFF のページを、`from` の人 (省くと最初の人) として開いて写します。
+  画像の path は筋書きの file のある folder から読みます。
+- **出る物。** `--out` の下に `index.html` (筋書きごとの step 数・秒数・額) と筋書きごとの folder:
+  `transcript.json` (step ごとの入力・agent の返事の生の中身・秒数・額)、`chat.html` (スマホの幅のトーク: 人ごとの
+  名前と吹き出し・文・Flex のカードと横の束 (近似)・返事のボタン・写真・位置・返事の下の秒数と額。外から
+  何も読まない 1 file)、`screens/` (トークと、開いた LIFF のページの PNG)。カードは LINE の描き方の近似で、
+  LIFF のページは本物のページです (LINE の SDK だけ代わりに差し替え、外の宛先は全部断ります)。
+  写しが要らない時は `--no-screens`。
+
+終了の状態は、step に問題があった時 (time-out・何も無い物を押す、など) が 1、設定や筋書きが読めない時が 2 です。
+
 ## 文書
 
 - 設定の手順 (LINE の channel・常駐): [`docs/setup/`](docs/setup/README.md)

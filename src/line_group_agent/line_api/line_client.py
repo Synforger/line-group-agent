@@ -59,11 +59,15 @@ class LineClient:
         channel_access_token: str,
         *,
         http_client: httpx.AsyncClient | None = None,
+        base_url: str | None = None,
+        data_base_url: str | None = None,
     ) -> None:
         # trust_env=False: no proxy or certificate settings from environment variables.
+        # A missing address is LINE's own; the settings may name another one (a stand-in).
         self._http = http_client or httpx.AsyncClient(
-            base_url=API_BASE_URL, timeout=REQUEST_TIMEOUT_SECONDS, trust_env=False
+            base_url=base_url or API_BASE_URL, timeout=REQUEST_TIMEOUT_SECONDS, trust_env=False
         )
+        self._data_base_url = data_base_url or DATA_API_BASE_URL
         self._headers = {"Authorization": f"Bearer {channel_access_token}"}
 
     async def reply(
@@ -147,7 +151,7 @@ class LineClient:
     async def get_message_content(self, message_id: str) -> tuple[bytes, str] | None:
         """Return the bytes and the content type of an image a member sent, or None when
         LINE does not give it (gone, an error, or larger than `MAX_CONTENT_BYTES`)."""
-        url = f"{DATA_API_BASE_URL}/v2/bot/message/{message_id}/content"
+        url = f"{self._data_base_url}/v2/bot/message/{message_id}/content"
         try:
             async with self._http.stream("GET", url, headers=self._headers) as response:
                 if response.status_code != HTTP_OK:

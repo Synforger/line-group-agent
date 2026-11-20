@@ -162,6 +162,8 @@ class AgentConfig:
     liff_max_body_bytes: int
     liff_max_failed_verifies_per_minute: int
     liff_max_failed_verifies_per_source_per_minute: int
+    line_api_base_url: str | None
+    line_data_api_base_url: str | None
     web_search: WebToolConfig | None
     web_fetch: WebToolConfig | None
     prices: PriceConfig
@@ -284,6 +286,8 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             "liff_max_failed_verifies_per_source_per_minute",
             DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_SOURCE_PER_MINUTE,
         ),
+        line_api_base_url=_base_url(raw, "line_api_base_url"),
+        line_data_api_base_url=_base_url(raw, "line_data_api_base_url"),
         web_search=_web_tool(
             raw, "web_search", DEFAULT_WEB_SEARCH_TYPE, DEFAULT_WEB_SEARCH_MAX_USES, None
         ),
@@ -387,6 +391,17 @@ def _line_id(raw: dict[str, Any], key: str) -> str | None:
     if value is not None and not LINE_ID_PATTERN.match(value):
         raise ConfigError(f"{key} must be letters, digits and hyphens only")
     return value
+
+
+def _base_url(raw: dict[str, Any], key: str) -> str | None:
+    """Return the address of another LINE (a stand-in) without a trailing slash, or None
+    to use LINE's own."""
+    value: str | None = _optional(raw, key, str, None)
+    if value is None:
+        return None
+    if not value.startswith(("http://", "https://")):
+        raise ConfigError(f"{key} must start with http:// or https://")
+    return value.rstrip("/")
 
 
 def _optional_path[T: Path | None](
