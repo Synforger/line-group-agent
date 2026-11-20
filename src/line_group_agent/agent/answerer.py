@@ -210,7 +210,10 @@ class Answerer:
             )
         if reply is None and not cards and not output.extras:
             return self._answer_without_reply(
-                is_api_down=is_api_down, is_over_budget=is_over_budget, is_name_only=is_name_only
+                is_api_down=is_api_down,
+                is_over_budget=is_over_budget,
+                is_name_only=is_name_only,
+                wrote_nothing=not texts and last_answer.get("stop_reason") == "end_turn",
             )
         if cards and self.card_images is not None:
             cards = await self.card_images.fill(cards)
@@ -235,7 +238,7 @@ class Answerer:
         return extract_reply(_text_of(answer)), False, False
 
     def _answer_without_reply(
-        self, *, is_api_down: bool, is_over_budget: bool, is_name_only: bool
+        self, *, is_api_down: bool, is_over_budget: bool, is_name_only: bool, wrote_nothing: bool
     ) -> Answer:
         if is_api_down:
             return Answer(None)
@@ -243,6 +246,10 @@ class Answerer:
             return Answer(self.config.budget.exhausted_text)
         if is_name_only:
             # A message that only held the name may not have been meant for the bot.
+            return Answer(None)
+        if wrote_nothing:
+            # The model ended its turn without a word: it chose to stay out of a message that
+            # named the bot without asking it anything, so saying sorry would be wrong.
             return Answer(None)
         return Answer(self.config.error_text or None)
 

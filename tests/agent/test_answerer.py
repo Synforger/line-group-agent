@@ -45,6 +45,13 @@ async def test_without_a_reply_mark_the_error_text_is_returned(tmp_path: Path) -
     assert await answerer.answer(GROUP, mention()) == Answer(DEFAULT_ERROR_TEXT)
 
 
+async def test_an_answer_that_writes_nothing_stays_silent(tmp_path: Path) -> None:
+    thinking_only = answer([{"type": "thinking", "thinking": "", "signature": "sig"}])
+    answerer, client, *_ = build(tmp_path, [thinking_only])
+    assert await answerer.answer(GROUP, mention(text="@bot is handy")) == Answer(None)
+    assert len(client.messages.requests) == 1
+
+
 async def test_the_request_carries_the_configured_model_tools_and_effort(tmp_path: Path) -> None:
     answerer, client, *_ = build(tmp_path, [text_answer("<reply>ok</reply>")])
     await answerer.answer(GROUP, mention())
