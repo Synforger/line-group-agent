@@ -36,6 +36,11 @@ body {
   #cfdcc4 10px, #cfdcc4 20px); }
 .pin .text { padding: 8px 10px; }
 .pin small { color: #666; display: block; }
+.sticker { background: #fff8; border: 2px dashed #fffa; border-radius: 12px; padding: 14px 18px;
+  text-align: center; }
+.sticker b { display: block; }
+.sticker small { color: #fff; display: block; }
+.mention { color: #1a73e8; font-weight: 700; }
 .liff img { width: 100%; max-height: 460px; object-fit: cover; object-position: top;
   display: block; }
 .liff .cap { padding: 6px 10px; font-size: 12px; color: #555; }

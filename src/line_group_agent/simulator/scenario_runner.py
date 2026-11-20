@@ -35,6 +35,7 @@ from line_group_agent.simulator.scenario import (
     PressStep,
     Scenario,
     Step,
+    StickerStep,
     TextStep,
     WaitStep,
 )
@@ -53,6 +54,7 @@ from line_group_agent.simulator.webhook_events import (
     location_event,
     postback_event,
     sign_body,
+    sticker_event,
     text_event,
     webhook_body,
 )
@@ -221,6 +223,22 @@ class ScenarioRunner:
             record.shown = {key: event["message"][key] for key in _LOCATION_KEYS}
             record.shown["type"] = "location"
             await self._send(event, record)
+        elif isinstance(step, StickerStep):
+            event = sticker_event(
+                group_id,
+                step.sender,
+                self._new_ids(),
+                package_id=step.package_id,
+                sticker_id=step.sticker_id,
+                keywords=step.keywords,
+            )
+            record.shown = {
+                "type": "sticker",
+                "package_id": step.package_id,
+                "sticker_id": step.sticker_id,
+                "keywords": list(step.keywords),
+            }
+            await self._send(event, record)
         elif isinstance(step, PressStep):
             await self._press(step, record)
         elif isinstance(step, OpenLiffStep):
@@ -368,6 +386,7 @@ def _kind_of(step: Step) -> str:
         TextStep: "text",
         ImageStep: "image",
         LocationStep: "location",
+        StickerStep: "sticker",
         PressStep: "press",
         OpenLiffStep: "open_liff",
         LiffClickStep: "liff_click",

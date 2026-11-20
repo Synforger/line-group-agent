@@ -60,6 +60,7 @@ from line_group_agent.reminders.reminder_tools import reminder_tools
 from line_group_agent.service.patrol import Patrol
 from line_group_agent.spend.spend_books import SpendBooks
 from line_group_agent.spend.spend_ledger import SpendLedger
+from line_group_agent.stickers.sticker_tools import sticker_tools
 from line_group_agent.tabs.tabs_file import TabsFile
 from line_group_agent.webhook.webhook_app import create_app
 
@@ -100,7 +101,7 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
     push_quota = PushQuota(line)
     push_left = PushLeft(push_quota)
     reminders = ReminderBook(config.state_dir, clock)
-    reminder_sender = ReminderSender(reminders, line, push_left, clock)
+    reminder_sender = ReminderSender(reminders, line, push_left, clock, group_log=group_log)
     client_tools = ClientTools(
         [
             *poll_tools(polls, liff_id=config.liff_id),
@@ -113,6 +114,7 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
                 min_push_left=config.wait_min_push_left,
                 clock=clock,
             ),
+            *sticker_tools(config.stickers),
         ]
     )
     caller = ModelCaller(

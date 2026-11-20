@@ -12,6 +12,7 @@ from line_group_agent.simulator.scenario import (
     LocationStep,
     OpenLiffStep,
     PressStep,
+    StickerStep,
     TextStep,
     WaitStep,
 )
@@ -250,3 +251,104 @@ async def test_a_reminder_set_in_the_scenario_is_sent_when_the_clock_is_moved_pa
     [push] = on_time.outputs
     assert push.kind == "push" and push.messages[0]["text"] == "@Ben Gather at the station"
     assert "+61 min" in (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
+
+
+async def test_a_reminder_calls_a_member_who_has_spoken_by_a_real_mention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    due = (datetime.now(GROUP_TIME_ZONE) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    call = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "set_reminder",
+        "input": {"when": due, "text": "Gather at the station", "who": ["Ben"]},
+    }
+    use_scripted_model(
+        monkeypatch,
+        [answer([call], stop_reason="tool_use"), text_answer("<reply>I will remind you.</reply>")],
+    )
+    [transcript] = await run_simulation(
+        bot_config(tmp_path),
+        [
+            scenario_of(
+                TextStep(BEN.user_id, "I will be there"),
+                TextStep(AKI.user_id, "remind Ben in two hours", mention=True),
+                AdvanceStep(121),
+            )
+        ],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    [push] = transcript.steps[2].outputs
+    [message] = push.messages
+    assert message["type"] == "textV2" and message["text"] == "{m1} Gather at the station"
+    assert message["substitution"]["m1"]["mentionee"] == {"type": "user", "userId": BEN.user_id}
+    page = (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
+    assert '<span class="mention">@Ben</span> Gather at the station' in page
+
+
+async def test_a_member_is_mentioned_for_real_and_a_sticker_goes_out_after_the_reply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sticker_call = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "send_sticker",
+        "input": {"name": "ありがとう"},
+    }
+    use_scripted_model(
+        monkeypatch,
+        [
+            answer([sticker_call], stop_reason="tool_use"),
+            text_answer(
+                "<reply><mention>Ben</mention>さん、ありがとう！ <mention>Cleo</mention>も</reply>"
+            ),
+        ],
+    )
+    config = bot_config(tmp_path)
+    [transcript] = await run_simulation(
+        config,
+        [
+            scenario_of(
+                TextStep(BEN.user_id, "I booked the hotel"),
+                StickerStep(AKI.user_id, "446", "1988", ("smile", "hello")),
+                TextStep(AKI.user_id, "thank Ben", mention=True),
+            )
+        ],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    booked, sticker, thanks = transcript.steps
+    assert [step.error for step in transcript.steps] == [None, None, None]
+    assert booked.outputs == [] and sticker.outputs == []
+    assert sticker.shown == {
+        "type": "sticker",
+        "package_id": "446",
+        "sticker_id": "1988",
+        "keywords": ["smile", "hello"],
+    }
+    [output] = thanks.outputs
+    text, sent_sticker = output.messages
+    assert text["type"] == "textV2" and text["text"] == "{m1}さん、ありがとう！ Cleoも"
+    assert text["substitution"]["m1"]["mentionee"] == {"type": "user", "userId": BEN.user_id}
+    assert text["quoteToken"]
+    assert sent_sticker == {"type": "sticker", "packageId": "8515", "stickerId": "16581243"}
+    log = (config.state_dir / "scenarios/trip/groups" / GROUP_ID / "messages.jsonl").read_text()
+    assert "(スタンプ: smile、hello)" in log and "(スタンプ: ありがとう)" in log
+    page = (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
+    assert '<span class="mention">@Ben</span>さん、ありがとう！ Cleoも' in page
+    assert "16581243" in page and "1988" in page
+
+
+async def test_a_mention_of_someone_who_never_spoke_is_only_a_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_scripted_model(monkeypatch, [text_answer("<reply><mention>Ben</mention>さん</reply>")])
+    [transcript] = await run_simulation(
+        bot_config(tmp_path),
+        [scenario_of(TextStep(AKI.user_id, "hello", mention=True))],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    [output] = transcript.steps[0].outputs
+    assert output.messages[0]["type"] == "text" and output.messages[0]["text"] == "Benさん"

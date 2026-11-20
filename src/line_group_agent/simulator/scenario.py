@@ -70,6 +70,16 @@ class LocationStep:
 
 
 @dataclass(frozen=True)
+class StickerStep:
+    """A member sends a sticker (LINE's ids of it, and the keywords LINE would give the bot)."""
+
+    sender: str
+    package_id: str
+    sticker_id: str
+    keywords: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PressStep:
     """A member presses a card button or a quick reply button of an earlier bot message."""
 
@@ -115,6 +125,7 @@ Step = (
     TextStep
     | ImageStep
     | LocationStep
+    | StickerStep
     | PressStep
     | OpenLiffStep
     | LiffClickStep

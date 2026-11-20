@@ -29,6 +29,7 @@ from line_group_agent.cards.card_record import CARD_RECORD_LABEL
 from line_group_agent.media.location_record import LOCATION_RECORD_LABEL
 from line_group_agent.polls.poll_text import DATE_POLL_RECORD_LABEL, POLL_RECORD_LABEL
 from line_group_agent.records.group_log import GroupMessage
+from line_group_agent.stickers.sticker_record import STICKER_RECORD_LABEL
 
 # The lines the dispatcher adds after a reply's text for what went with it.
 REPLY_EXTRA_LABELS = (
@@ -36,6 +37,7 @@ REPLY_EXTRA_LABELS = (
     POLL_RECORD_LABEL,
     DATE_POLL_RECORD_LABEL,
     LOCATION_RECORD_LABEL,
+    STICKER_RECORD_LABEL,
 )
 ELEMENT_TAGS = ("message", "mention")
 

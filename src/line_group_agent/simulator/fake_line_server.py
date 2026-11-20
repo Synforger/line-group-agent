@@ -9,6 +9,7 @@ at it through its `line_api_base_url` setting. A reply token works once, as LINE
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,6 +32,9 @@ HTTP_NOT_FOUND = 404
 REPLY_KIND = "reply"
 PUSH_KIND = "push"
 OTHER_KIND = "other"
+# In a `textV2` text: `{key}` is a placeholder, and a doubled brace is one literal brace.
+TEXT_V2_PLACEHOLDER = re.compile(r"(?<!\{)\{(\w+)\}(?!\})")
+TEXT_V2_STRAY_BRACE = re.compile(r"(?<!\{)\{(?!\{)|(?<!\})\}(?!\})")
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,9 @@ class FakeLineServer:
             if call.kind in (REPLY_KIND, PUSH_KIND) and call.status == 200
         ]
 
+    def _problem_with(self, messages: object) -> str | None:
+        return _problem_with(messages, {member.user_id for member in self.group.members})
+
     def _build_app(self) -> FastAPI:
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
         group_id = self.group.id
@@ -102,7 +109,7 @@ class FakeLineServer:
                     token or "",
                     {"message": "Invalid reply token"},
                 )
-            problem = _problem_with(body.get("messages"))
+            problem = self._problem_with(body.get("messages"))
             if problem is not None:
                 return self._answer(
                     request, REPLY_KIND, HTTP_BAD_REQUEST, body, token, {"message": problem}
@@ -114,7 +121,7 @@ class FakeLineServer:
         async def push(request: Request) -> Response:
             body = await _json_body(request)
             to = body.get("to")
-            problem = _problem_with(body.get("messages"))
+            problem = self._problem_with(body.get("messages"))
             if problem is not None or not isinstance(to, str):
                 message = problem or "The property, 'to', must be specified."
                 return self._answer(
@@ -228,7 +235,7 @@ async def _json_body(request: Request) -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
-def _problem_with(messages: object) -> str | None:
+def _problem_with(messages: object, member_ids: set[str]) -> str | None:
     """Return why LINE would refuse these messages, or None when they pass."""
     if not isinstance(messages, list) or not messages:
         return "The request body has 1 error(s): messages must not be empty"
@@ -236,4 +243,41 @@ def _problem_with(messages: object) -> str | None:
         return f"The request body has 1 error(s): at most {MAX_MESSAGES_PER_CALL} messages"
     if not all(isinstance(message, dict) and message.get("type") for message in messages):
         return "The request body has 1 error(s): a message has no type"
+    for message in messages:
+        problem = _message_problem(message, member_ids)
+        if problem is not None:
+            return f"The request body has 1 error(s): {problem}"
     return None
+
+
+def _message_problem(message: dict[str, Any], member_ids: set[str]) -> str | None:
+    """Return why LINE would refuse a text v2 or a sticker message, or None."""
+    if message["type"] == "sticker":
+        ids = (message.get("packageId"), message.get("stickerId"))
+        if not all(isinstance(value, str) and value for value in ids):
+            return "packageId and stickerId must be strings"
+    if message["type"] != "textV2":
+        return None
+    text, substitution = message.get("text"), message.get("substitution") or {}
+    if not isinstance(text, str) or not text or not isinstance(substitution, dict):
+        return "text must not be empty and substitution must be an object"
+    if sum(1 for value in substitution.values() if _mentioned_user(value) is not None) > 20:
+        return "at most 20 mentions"
+    for value in substitution.values():
+        user_id = _mentioned_user(value)
+        if user_id is not None and user_id not in member_ids:
+            return "a mentioned user is not in the group"
+    keys = TEXT_V2_PLACEHOLDER.findall(text)
+    if any(key not in substitution for key in keys) or TEXT_V2_STRAY_BRACE.search(
+        TEXT_V2_PLACEHOLDER.sub("", text)
+    ):
+        return "a placeholder has no substitution or a brace is not paired"
+    return None
+
+
+def _mentioned_user(substitution: Any) -> str | None:
+    if not isinstance(substitution, dict) or substitution.get("type") != "mention":
+        return None
+    mentionee = substitution.get("mentionee")
+    user_id = mentionee.get("userId") if isinstance(mentionee, dict) else None
+    return user_id if isinstance(user_id, str) else ""

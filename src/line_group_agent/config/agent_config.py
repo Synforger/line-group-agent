@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from line_group_agent.stickers.default_stickers import DEFAULT_STICKERS
+from line_group_agent.stickers.sticker import Sticker
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DEFAULT_MAX_BODY_BYTES = 1024 * 1024
@@ -58,6 +61,9 @@ DEFAULT_LIFF_MAX_BODY_BYTES = 1024
 DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_MINUTE = 30
 DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_SOURCE_PER_MINUTE = 10
 LINE_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+STICKER_ID_PATTERN = re.compile(r"^[0-9]{1,20}$")
+MAX_STICKER_COUNT = 50
+STICKER_NAME_MAX_CHARS = 20
 
 
 class ConfigError(ValueError):
@@ -158,6 +164,7 @@ class AgentConfig:
     max_images_per_turn: int
     max_image_edge_pixels: int
     card_image_lookup: bool
+    stickers: tuple[Sticker, ...]
     liff_id: str | None
     login_channel_id: str | None
     liff_max_requests_per_user_per_minute: int
@@ -276,6 +283,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             minimum=MIN_IMAGE_EDGE_PIXELS,
         ),
         card_image_lookup=_optional(raw, "card_image_lookup", bool, True),
+        stickers=_stickers(raw),
         liff_id=_line_id(raw, "liff_id"),
         login_channel_id=_line_id(raw, "login_channel_id"),
         liff_max_requests_per_user_per_minute=_at_least(
@@ -392,6 +400,42 @@ def _string_tuple(raw: dict[str, Any], key: str, default: tuple[str, ...]) -> tu
     if not all(isinstance(value, str) and value.strip() for value in values):
         raise ConfigError(f"{key} must be a list of non-empty strings")
     return tuple(value.strip() for value in values)
+
+
+def _stickers(raw: dict[str, Any]) -> tuple[Sticker, ...]:
+    """Return the stickers the bot may send: the setting `stickers` is an object of a name to
+    `{"package_id": ..., "sticker_id": ...}`; unset gives the defaults, `{}` gives none."""
+    section = _optional(raw, "stickers", dict, None)
+    if section is None:
+        return DEFAULT_STICKERS
+    if len(section) > MAX_STICKER_COUNT:
+        raise ConfigError(f"stickers may hold at most {MAX_STICKER_COUNT} stickers")
+    stickers = []
+    for name, ids in section.items():
+        if not name.strip() or len(name) > STICKER_NAME_MAX_CHARS:
+            raise ConfigError(
+                f"a sticker name must be 1 to {STICKER_NAME_MAX_CHARS} characters, not blank"
+            )
+        ids = _checked(ids, f"stickers.{name}", dict)
+        stickers.append(
+            Sticker(
+                name.strip(),
+                _sticker_id(ids, "package_id", name),
+                _sticker_id(ids, "sticker_id", name),
+            )
+        )
+    if len({sticker.name for sticker in stickers}) != len(stickers):
+        raise ConfigError("stickers holds the same name twice")
+    return tuple(stickers)
+
+
+def _sticker_id(ids: dict[str, Any], key: str, name: str) -> str:
+    value = ids.get(key)
+    # LINE writes the ids as strings of digits; a JSON number is taken too.
+    text = str(value) if isinstance(value, int) and not isinstance(value, bool) else value
+    if not isinstance(text, str) or not STICKER_ID_PATTERN.match(text):
+        raise ConfigError(f"stickers.{name}.{key} must be a number written in digits")
+    return text
 
 
 def _line_id(raw: dict[str, Any], key: str) -> str | None:

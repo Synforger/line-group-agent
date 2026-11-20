@@ -24,6 +24,7 @@ from line_group_agent.simulator.scenario import (
     PressStep,
     Scenario,
     Step,
+    StickerStep,
     TextStep,
     WaitStep,
 )
@@ -106,6 +107,8 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
         return ImageStep(sender, image_file)
     if "location" in step:
         return _parse_location(sender, _object(step["location"], f"{where}: location"), where)
+    if "sticker" in step:
+        return _parse_sticker(sender, _object(step["sticker"], f"{where}: sticker"), where)
     if "press" in step:
         return PressStep(sender, _parse_target(step["press"], where))
     if "open_liff" in step:
@@ -114,7 +117,7 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
         click = _object(step["liff_click"], f"{where}: liff_click")
         return LiffClickStep(sender, _parse_target(click, where), _string(click, "selector", where))
     raise ScenarioError(
-        f"{where}: needs one of text, image, location, press, open_liff, liff_click, "
+        f"{where}: needs one of text, image, location, sticker, press, open_liff, liff_click, "
         "wait_seconds or advance_minutes"
     )
 
@@ -133,6 +136,26 @@ def _parse_location(sender: str, raw: dict[str, Any], where: str) -> LocationSte
         coordinates[0],
         coordinates[1],
     )
+
+
+def _parse_sticker(sender: str, raw: dict[str, Any], where: str) -> StickerStep:
+    keywords = raw.get("keywords", [])
+    if not isinstance(keywords, list) or not all(isinstance(word, str) for word in keywords):
+        raise ScenarioError(f"{where}: sticker.keywords must be a list of strings")
+    return StickerStep(
+        sender,
+        _digits(raw, "package_id", where),
+        _digits(raw, "sticker_id", where),
+        tuple(keywords),
+    )
+
+
+def _digits(section: dict[str, Any], key: str, where: str) -> str:
+    value = section.get(key)
+    text = str(value) if isinstance(value, int) and not isinstance(value, bool) else value
+    if not isinstance(text, str) or not text.isascii() or not text.isdigit():
+        raise ScenarioError(f"{where}: sticker.{key} must be a number written in digits")
+    return text
 
 
 def _parse_target(raw: Any, where: str) -> ActionRef:

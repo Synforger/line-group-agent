@@ -207,8 +207,13 @@ def test_a_location_message_is_a_kind_too() -> None:
     assert message_kind_of(location) == "location"
 
 
+def test_a_sticker_message_is_a_kind_too() -> None:
+    sticker = {**text_event(), "message": {"type": "sticker", "id": "1"}}
+    assert message_kind_of(sticker) == "sticker"
+
+
 def test_other_messages_and_events_have_no_kind() -> None:
-    assert message_kind_of({**text_event(), "message": {"type": "sticker", "id": "1"}}) is None
+    assert message_kind_of({**text_event(), "message": {"type": "video", "id": "1"}}) is None
     assert message_kind_of({"type": "join"}) is None
     assert message_kind_of({"type": "postback", "message": {"type": "image"}}) is None
 

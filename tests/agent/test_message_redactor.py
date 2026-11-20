@@ -113,6 +113,13 @@ def test_a_bot_reply_that_carried_a_poll_and_a_place_is_still_found() -> None:
     assert changed == [{"type": "text", "text": "<reply>[deleted]</reply>"}]
 
 
+def test_a_bot_reply_that_carried_a_sticker_is_still_found() -> None:
+    reply = GroupMessage("t", "bot-5", None, None, "Thanks!\n(スタンプ: ありがとう)", True)
+    blocks = [{"type": "text", "text": "<reply>Thanks!</reply>"}]
+    changed = redact_row(assistant_row(blocks), [reply])["message"]["content"]
+    assert changed == [{"type": "text", "text": "<reply>[deleted]</reply>"}]
+
+
 def test_a_reply_that_only_starts_the_same_way_is_not_taken_for_the_deleted_one() -> None:
     reply = GroupMessage("t", "bot-4", None, None, "Vote below.\nand then more words", True)
     blocks = [{"type": "text", "text": "<reply>Vote below.</reply>"}]

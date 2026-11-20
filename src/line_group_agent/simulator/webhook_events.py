@@ -1,7 +1,7 @@
 """Build the webhook events LINE would send for what a member does, and sign a request body.
 
 Pure shape-building; called by the scenario runner. The shapes follow LINE's webhook event
-objects for a group chat: a message (text, image, location) and a postback.
+objects for a group chat: a message (text, image, location, sticker) and a postback.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,6 +88,28 @@ def location_event(
         "address": address,
         "latitude": latitude,
         "longitude": longitude,
+    }
+    return _message_event(group_id, user_id, ids, message)
+
+
+def sticker_event(
+    group_id: str,
+    user_id: str,
+    ids: EventIds,
+    *,
+    package_id: str,
+    sticker_id: str,
+    keywords: Sequence[str],
+) -> dict[str, Any]:
+    """Return the event of a sticker (a still one of LINE's own, with its keywords)."""
+    message = {
+        "id": ids.message_id,
+        "type": "sticker",
+        "quoteToken": ids.quote_token,
+        "packageId": package_id,
+        "stickerId": sticker_id,
+        "stickerResourceType": "STATIC",
+        "keywords": list(keywords),
     }
     return _message_event(group_id, user_id, ids, message)
 

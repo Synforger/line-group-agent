@@ -15,9 +15,11 @@ from line_group_agent.simulator.webhook_events import (
     location_event,
     postback_event,
     sign_body,
+    sticker_event,
     text_event,
     webhook_body,
 )
+from line_group_agent.stickers.sticker_record import received_sticker_line
 from line_group_agent.webhook.signature import is_valid_signature
 
 IDS = EventIds("reply-token", "EVENT1", "1001", "quote-token", 1_700_000_000_000)
@@ -37,6 +39,15 @@ def test_a_mention_puts_the_handle_first_and_marks_the_bot() -> None:
     assert is_self_mentioned(event)
     [mentionee] = event["message"]["mention"]["mentionees"]
     assert (mentionee["index"], mentionee["length"]) == (0, len("@Sora"))
+
+
+def test_a_sticker_event_is_read_by_the_bot_as_a_sticker_with_its_keywords() -> None:
+    event = sticker_event(
+        "Cg", "Ua", IDS, package_id="446", sticker_id="1988", keywords=["smile", "hello"]
+    )
+    assert message_kind_of(event) == "sticker" and not is_text_message(event)
+    assert received_sticker_line(event["message"]) == "(スタンプ: smile、hello)"
+    assert quote_token_of(event) == "quote-token"
 
 
 def test_an_image_a_pin_and_a_postback_are_read_by_the_bot() -> None:

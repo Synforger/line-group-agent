@@ -321,3 +321,52 @@ async def test_content_that_is_gone_is_none() -> None:
 async def test_content_over_the_size_limit_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("line_group_agent.line_api.line_client.MAX_CONTENT_BYTES", 3)
     assert await content_client(200, b"abcd", "image/png").get_message_content("123") is None
+
+
+async def test_a_mention_mark_of_a_known_name_goes_out_as_a_text_v2_message() -> None:
+    line, seen = client_answering(200)
+    await line.reply(
+        "rt", "<mention>Aki</mention>さん、{ok}", quote_token="q1", mentionable={"Aki": "Uaki"}
+    )
+    [message] = json.loads(seen[0].content)["messages"]
+    assert message == {
+        "type": "textV2",
+        "text": "{m1}さん、{{ok}}",
+        "substitution": {
+            "m1": {"type": "mention", "mentionee": {"type": "user", "userId": "Uaki"}}
+        },
+        "quoteToken": "q1",
+    }
+
+
+async def test_a_push_makes_the_same_text_v2_message() -> None:
+    line, seen = client_answering(200)
+    await line.push("Cgroup", "<mention>Aki</mention> hi", mentionable={"Aki": "Uaki"})
+    [message] = json.loads(seen[0].content)["messages"]
+    assert message["type"] == "textV2" and message["text"] == "{m1} hi"
+
+
+async def test_a_mark_that_cannot_be_a_mention_leaves_the_name_in_a_plain_text() -> None:
+    line, seen = client_answering(200)
+    await line.reply("rt", "<mention>Cleo</mention> hi {x}", mentionable={"Aki": "Uaki"})
+    await line.reply("rt", "<mention>Aki</mention> hi")
+    messages = [json.loads(request.content)["messages"][0] for request in seen]
+    assert messages == [
+        {"type": "text", "text": "Cleo hi {x}"},
+        {"type": "text", "text": "Aki hi"},
+    ]
+
+
+async def test_a_message_line_refuses_for_its_mention_is_not_a_refused_token() -> None:
+    line, _ = client_answering(400, {"message": "The request body has 1 error(s)"})
+    result = await line.reply("rt", "<mention>Aki</mention>", mentionable={"Aki": "Uaki"})
+    assert result is ReplyResult.MESSAGE_REFUSED
+    assert await line.reply("rt", "<mention>Aki</mention>") is ReplyResult.TOKEN_REFUSED
+
+
+async def test_a_text_too_long_for_a_text_v2_message_is_sent_plain_and_cut() -> None:
+    line, seen = client_answering(200)
+    text = "<mention>Aki</mention>" + "あ" * 6000
+    await line.reply("rt", text, mentionable={"Aki": "Uaki"})
+    [message] = json.loads(seen[0].content)["messages"]
+    assert message["type"] == "text" and len(message["text"]) == 5000

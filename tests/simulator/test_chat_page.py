@@ -178,3 +178,27 @@ def test_a_click_in_a_page_shows_what_it_sent_as_the_members_message_and_what_it
 def test_a_click_that_sent_nothing_is_not_called_silence() -> None:
     html = page_of(step(0, "liff_click", {"type": "liff_click", "url": "u", "selector": "#a"}))
     assert "no reply" not in html
+
+
+def test_a_mention_is_drawn_with_the_name_and_a_sticker_as_a_labelled_box() -> None:
+    reply = OutputRecord(
+        0,
+        "reply",
+        1.0,
+        "token",
+        [
+            {
+                "type": "textV2",
+                "text": "{m1}さん {{ok}} <b>",
+                "substitution": {
+                    "m1": {"type": "mention", "mentionee": {"type": "user", "userId": "Ua"}}
+                },
+            },
+            {"type": "sticker", "packageId": "8515", "stickerId": "16581243"},
+        ],
+    )
+    sent = {"type": "sticker", "package_id": "446", "sticker_id": "1988", "keywords": ["hi", "yo"]}
+    html = page_of(step(0, "sticker", sent, outputs=[reply]))
+    assert '<span class="mention">@Aki</span>さん {ok} &lt;b&gt;' in html
+    assert "8515 / 16581243" in html and "446 / 1988" in html and "hi、yo" in html
+    assert "[sticker]" not in html
