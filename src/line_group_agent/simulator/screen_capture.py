@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from line_group_agent._common.headless_browser import BrowserUnavailableError, HeadlessBrowser
 from line_group_agent.simulator.id_token import read_id_token
 
 LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js"
@@ -53,33 +54,18 @@ class ScreenCapture:
     """A headless Chromium that takes full-page pictures at a phone's width."""
 
     def __init__(self) -> None:
-        self._playwright: Any = None
-        self._browser: Any = None
+        self._browser = HeadlessBrowser()
 
     async def open(self) -> None:
         """Start the browser."""
         try:
-            from playwright.async_api import async_playwright
-        except ImportError as error:
-            raise ScreensUnavailableError("playwright is not installed") from error
-        self._playwright = await async_playwright().start()
-        try:
-            self._browser = await self._playwright.chromium.launch()
-        except Exception as error:  # the browser build may be missing; say how to get it
-            await self._playwright.stop()
-            self._playwright = None
-            raise ScreensUnavailableError(
-                "Chromium could not start; run `uv run playwright install chromium`"
-            ) from error
+            await self._browser.open()
+        except BrowserUnavailableError as error:
+            raise ScreensUnavailableError(str(error)) from error
 
     async def close(self) -> None:
         """Close the browser and wait until it is gone."""
-        if self._browser is not None:
-            await self._browser.close()
-            self._browser = None
-        if self._playwright is not None:
-            await self._playwright.stop()
-            self._playwright = None
+        await self._browser.close()
 
     async def __aenter__(self) -> ScreenCapture:
         await self.open()

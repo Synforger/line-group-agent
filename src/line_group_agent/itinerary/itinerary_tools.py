@@ -2,9 +2,10 @@
 one item at a time by its id, set the trip's name and first day, and put back an earlier state.
 
 Members see the itinerary as a card (the next three items and a button to the LIFF page) when
-the model reads it with `show_card`; a mention with only the itinerary keyword still gets the
-text back without the model (the event dispatcher does that). Called by the service builder,
-which adds the tools to the client tools.
+the model reads it with `show_card`, or as images of the plan with `show_image` (the card
+replaces the images when they cannot be drawn); a mention with only the itinerary keyword still
+gets the text back without the model (the event dispatcher does that). Called by the service
+builder, which adds the tools to the client tools.
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ from line_group_agent.itinerary.item_input import (
 )
 from line_group_agent.itinerary.itinerary import MAX_DAY, Itinerary, ItineraryItem, minutes_of
 from line_group_agent.itinerary.itinerary_book import MAX_ITEM_COUNT, ItineraryBook
+from line_group_agent.itinerary.itinerary_image_message import (
+    build_itinerary_image_message,
+    itinerary_image_record_line,
+)
+from line_group_agent.itinerary.itinerary_images import ItineraryImages
 from line_group_agent.itinerary.itinerary_message import (
     build_itinerary_message,
     itinerary_record_line,
@@ -53,6 +59,12 @@ END_AFTER_START_RESULT = (
 NO_ROOM_NOTE = "No card was sent: this reply already holds as many extra messages as LINE allows."
 NO_PAGE_NOTE = "No card was sent: no itinerary page is set up here, so give the plan in your reply."
 EMPTY_CARD_NOTE = "No card was sent: there is nothing on the itinerary yet."
+NO_IMAGE_SETUP_NOTE = "No image was sent: images are not set up here."
+NO_IMAGE_ROOM_NOTE = (
+    "No image was sent: this reply already holds as many extra messages as LINE allows."
+)
+EMPTY_IMAGE_NOTE = "No image was sent: there is nothing on the itinerary yet."
+IMAGE_FAILED_NOTE = "No image was sent: it could not be drawn, so the card is sent instead."
 LEGACY_NOTE = (
     "Earlier memo (written before items existed; when asked, turn it into items with "
     "add_itinerary_item and leave it as it is):"
@@ -69,10 +81,15 @@ FIELD_CLEANERS: dict[str, Callable[[object], object]] = {
 
 
 def itinerary_tools(
-    book: ItineraryBook, *, liff_id: str | None, clock: Callable[[], datetime]
+    book: ItineraryBook,
+    *,
+    liff_id: str | None,
+    clock: Callable[[], datetime],
+    images: ItineraryImages | None = None,
 ) -> list[ClientTool]:
     """Return the itinerary tools, working on `book`. With `liff_id` the model may send the
-    itinerary as a card that opens the page of that LIFF app."""
+    itinerary as a card that opens the page of that LIFF app; with `images` it may send it as
+    images of the plan."""
 
     def get(tool_input: object, turn: ToolTurn) -> ToolOutcome:
         itinerary = book.get(turn.group_id)
@@ -80,7 +97,12 @@ def itinerary_tools(
             return ToolOutcome(NO_ITINERARY_RESULT)
         fields = tool_input if isinstance(tool_input, dict) else {}
         text = _model_text_of(itinerary, book.versions(turn.group_id))
-        if fields.get("show_card") is True:
+        wants_card = fields.get("show_card") is True
+        if fields.get("show_image") is True:
+            note, is_sent = _send_images(images, turn, itinerary)
+            text += "\n" + note
+            wants_card = wants_card or not is_sent
+        if wants_card:
             text += "\n" + _send_card(book, turn, itinerary, liff_id, clock())
         return ToolOutcome(text)
 
@@ -218,6 +240,36 @@ def _send_card(
     return "The itinerary card is sent after your reply; members open the whole plan from it."
 
 
+def _send_images(
+    images: ItineraryImages | None, turn: ToolTurn, itinerary: Itinerary
+) -> tuple[str, bool]:
+    """Add the images of the itinerary to the reply; return what to tell the model and
+    whether any image was added."""
+    if images is None:
+        return NO_IMAGE_SETUP_NOTE, False
+    if not itinerary.items:
+        return EMPTY_IMAGE_NOTE, False
+    if not turn.output.has_room():
+        return NO_IMAGE_ROOM_NOTE, False
+    made = images.create_blocking(turn.group_id, itinerary)
+    if made is None:
+        return IMAGE_FAILED_NOTE, False
+    sent = 0
+    for url in made.urls:
+        if not turn.output.has_room():
+            break
+        turn.output.add(
+            OutgoingExtra(
+                build_itinerary_image_message(url), itinerary_image_record_line(itinerary)
+            )
+        )
+        sent += 1
+    note = f"{sent} image(s) of the plan are sent after your reply."
+    if sent < len(made.urls) or made.omitted_day_count:
+        note += " Not every day fits: the card or the page shows the rest."
+    return note, True
+
+
 def _get_definition() -> dict[str, Any]:
     return {
         "name": GET_ITINERARY_TOOL_NAME,
@@ -227,7 +279,10 @@ def _get_definition() -> dict[str, Any]:
             "itinerary, and when a member asks what the plan is. With show_card true the "
             "itinerary is also sent as a card after your reply (the next three items and a "
             "button that opens the whole plan as a calendar page): use it when a member wants "
-            "to see the plan, not when you only read it to change it."
+            "to see the plan, not when you only read it to change it. With show_image true the "
+            "plan is also sent as up to three images drawn like the calendar page, all days "
+            "one under the other: use it when a member asks for the plan as an image and when "
+            "you have just finished building it."
         ),
         "input_schema": {
             "type": "object",
@@ -235,6 +290,10 @@ def _get_definition() -> dict[str, Any]:
                 "show_card": {
                     "type": "boolean",
                     "description": "True to send the itinerary card as well.",
+                },
+                "show_image": {
+                    "type": "boolean",
+                    "description": "True to send the itinerary as images as well.",
                 },
             },
         },

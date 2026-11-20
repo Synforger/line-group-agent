@@ -32,6 +32,9 @@ from line_group_agent.events.mention_limiter import MentionLimiter
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
 from line_group_agent.itinerary.itinerary_book import ItineraryBook
+from line_group_agent.itinerary.itinerary_image_store import ItineraryImageStore
+from line_group_agent.itinerary.itinerary_images import ItineraryImages
+from line_group_agent.itinerary.itinerary_renderer import ItineraryRenderer
 from line_group_agent.itinerary.itinerary_replier import ItineraryReplier
 from line_group_agent.itinerary.itinerary_tools import itinerary_tools
 from line_group_agent.liff.liff_itineraries import LiffItineraries
@@ -102,10 +105,13 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
     push_left = PushLeft(push_quota)
     reminders = ReminderBook(config.state_dir, clock)
     reminder_sender = ReminderSender(reminders, line, push_left, clock, group_log=group_log)
+    itinerary_images = _itinerary_images(config, clock)
     client_tools = ClientTools(
         [
             *poll_tools(polls, liff_id=config.liff_id),
-            *itinerary_tools(itineraries, liff_id=config.liff_id, clock=clock),
+            *itinerary_tools(
+                itineraries, liff_id=config.liff_id, clock=clock, images=itinerary_images
+            ),
             *bill_tools(),
             *reminder_tools(
                 reminders,
@@ -192,7 +198,7 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
     closers = [line.close, client.close]
     if card_images is not None:
         closers.append(card_images.close)
-    routers = _liff_routers(config, polls, itineraries, line, clock, closers)
+    routers = _liff_routers(config, polls, itineraries, itinerary_images, line, clock, closers)
     app = create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
@@ -219,6 +225,7 @@ def _liff_routers(
     config: AgentConfig,
     polls: PollBook,
     itineraries: ItineraryBook,
+    itinerary_images: ItineraryImages | None,
     line: LineClient,
     clock: Callable[[], datetime],
     closers: list[Callable[[], Awaitable[None]]],
@@ -263,8 +270,21 @@ def _liff_routers(
             max_body_bytes=config.liff_max_body_bytes,
             itinerary_page=load_itinerary_page(config.liff_id),
             itineraries=itinerary_service,
+            images=itinerary_images.store if itinerary_images else None,
         )
     ]
+
+
+def _itinerary_images(config: AgentConfig, clock: Callable[[], datetime]) -> ItineraryImages | None:
+    """Return the maker of itinerary images, or None unless the LIFF pages and the agent's
+    public address are set (the images are served below the LIFF endpoint, at that address)."""
+    if config.liff_id is None or config.login_channel_id is None or config.public_base_url is None:
+        return None
+    return ItineraryImages(
+        ItineraryRenderer(),
+        ItineraryImageStore(config.state_dir, clock),
+        public_base_url=config.public_base_url,
+    )
 
 
 def _media_recorder(

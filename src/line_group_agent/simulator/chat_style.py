@@ -31,6 +31,7 @@ body {
 .quote { display: block; font-size: 11px; color: #555; border-left: 3px solid #0006;
   padding-left: 6px; margin-bottom: 4px; white-space: normal; }
 .photo { max-width: 220px; border-radius: 12px; display: block; }
+.photo.plan { max-width: 300px; }
 .pin, .liff { background: #fff; border-radius: 12px; overflow: hidden; width: 240px; }
 .pin .map { height: 90px; background: repeating-linear-gradient(45deg, #dfe8d6, #dfe8d6 10px,
   #cfdcc4 10px, #cfdcc4 20px); }

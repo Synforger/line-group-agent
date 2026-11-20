@@ -69,7 +69,9 @@ to ask it something.
 By default a poll card has a button per option and each press shows in the talk. To vote on a
 page inside LINE instead, with bars and names and nothing posted to the talk, add a LINE Login
 channel and a LIFF app and set `liff_id` and `login_channel_id`; see [The voting
-page](../reference/liff.md).
+page](../reference/liff.md). With `public_base_url` set as well, the bot can send the trip
+itinerary into the talk as images; that needs Chromium (`uv run playwright install chromium`,
+and a Japanese font on Linux), see [The itinerary images](../reference/liff.md#the-itinerary-images).
 
 ## 7. Run it as a service
 

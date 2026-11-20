@@ -171,6 +171,7 @@ class AgentConfig:
     liff_max_body_bytes: int
     liff_max_failed_verifies_per_minute: int
     liff_max_failed_verifies_per_source_per_minute: int
+    public_base_url: str | None
     line_api_base_url: str | None
     line_data_api_base_url: str | None
     web_search: WebToolConfig | None
@@ -302,6 +303,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             "liff_max_failed_verifies_per_source_per_minute",
             DEFAULT_LIFF_MAX_FAILED_VERIFIES_PER_SOURCE_PER_MINUTE,
         ),
+        public_base_url=_base_url(raw, "public_base_url"),
         line_api_base_url=_base_url(raw, "line_api_base_url"),
         line_data_api_base_url=_base_url(raw, "line_data_api_base_url"),
         web_search=_web_tool(
@@ -446,8 +448,8 @@ def _line_id(raw: dict[str, Any], key: str) -> str | None:
 
 
 def _base_url(raw: dict[str, Any], key: str) -> str | None:
-    """Return the address of another LINE (a stand-in) without a trailing slash, or None
-    to use LINE's own."""
+    """Return the address (another LINE's, a stand-in, or this agent's public one) without a
+    trailing slash, or None when it is not set."""
     value: str | None = _optional(raw, key, str, None)
     if value is None:
         return None

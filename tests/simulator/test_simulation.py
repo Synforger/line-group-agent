@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from line_group_agent._common.headless_browser import BrowserUnavailableError, HeadlessBrowser
 from line_group_agent.reminders.reminder import GROUP_TIME_ZONE
 from line_group_agent.simulator.scenario import (
     ActionRef,
@@ -352,3 +353,54 @@ async def test_a_mention_of_someone_who_never_spoke_is_only_a_name(
     )
     [output] = transcript.steps[0].outputs
     assert output.messages[0]["type"] == "text" and output.messages[0]["text"] == "Benさん"
+
+
+ADD_CALL = {
+    "type": "tool_use",
+    "id": "toolu_add",
+    "name": "add_itinerary_item",
+    "input": {"day": 1, "title": "Kiyomizu", "start": "09:00", "end": "10:30"},
+}
+IMAGE_CALL = {
+    "type": "tool_use",
+    "id": "toolu_image",
+    "name": "get_itinerary",
+    "input": {"show_image": True},
+}
+
+
+async def test_the_itinerary_image_is_drawn_kept_addressed_to_the_bot_and_shown_in_the_chat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    try:
+        async with HeadlessBrowser():
+            pass
+    except BrowserUnavailableError as error:
+        pytest.skip(str(error))
+    use_scripted_model(
+        monkeypatch,
+        [
+            answer([ADD_CALL], stop_reason="tool_use"),
+            answer([IMAGE_CALL], message_id="msg_2", stop_reason="tool_use"),
+            text_answer("<reply>Here is the plan.</reply>", message_id="msg_3"),
+        ],
+    )
+    config = bot_config(tmp_path, liff_id=LIFF_ID, login_channel_id=LOGIN_CHANNEL_ID)
+    [transcript] = await run_simulation(
+        config,
+        [scenario_of(TextStep(AKI.user_id, "plan it as an image", mention=True))],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    [step] = transcript.steps
+    assert step.error is None
+    messages = [message for output in step.outputs for message in output.messages]
+    [image] = [message for message in messages if message["type"] == "image"]
+    assert image["originalContentUrl"].startswith("http://127.0.0.1:")
+    assert "/liff/media/" in image["originalContentUrl"]
+    kept = list((config.state_dir / "scenarios/trip/groups" / GROUP_ID).glob("itinerary-images/*"))
+    assert len(kept) == 1
+    chat = (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
+    assert 'class="photo plan" src="data:image/png;base64,' in chat
+    log = (config.state_dir / "scenarios/trip/groups" / GROUP_ID / "messages.jsonl").read_text()
+    assert "[予定表の画像]" in log

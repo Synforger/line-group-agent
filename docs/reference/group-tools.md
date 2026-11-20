@@ -68,7 +68,7 @@ changes and removes one item at a time by its id, so a change never rewrites the
 
 | Tool | What it does |
 |---|---|
-| `get_itinerary` | Reads the trip, every item with its id grouped by day, and the earlier versions. With `show_card` it also sends the itinerary as a card |
+| `get_itinerary` | Reads the trip, every item with its id grouped by day, and the earlier versions. With `show_card` it also sends the itinerary as a card; with `show_image` as [images](liff.md#the-itinerary-images) |
 | `add_itinerary_item` | Adds one item (`day` and `title` are required) |
 | `change_itinerary_item` | Changes the fields given for one item; an empty string clears an optional field |
 | `remove_itinerary_item` | Removes one item |
@@ -82,6 +82,12 @@ changes and removes one item at a time by its id, so a change never rewrites the
   first day, the first three) and one button, **予定表を開く**, that opens the
   [itinerary page](liff.md#the-itinerary-page): the whole plan as a calendar. Without a LIFF
   app there is no page and no card, and the bot gives the plan in its reply
+- With `show_image` the plan is also sent as up to three images, drawn like the calendar page
+  with every day one under the other (see [the itinerary images](liff.md#the-itinerary-images)).
+  The bot is told to use it when a member asks for the plan as an image and when it has just
+  finished building the plan. Images count among the three extra messages a reply may carry, and
+  the card comes after them. When no image can be made (`public_base_url` is not set, or the
+  browser is missing) the card is sent instead
 - Every change keeps the state it replaced, the last five of them, in the group's
   `itinerary.json`. `restore_itinerary` puts one back and keeps the state it replaces, so a
   restore can be undone too
