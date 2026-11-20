@@ -10,6 +10,7 @@ the objects it uses; rolling a full conversation over is the rollover's job.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ from typing import Any
 
 from line_group_agent.agent.client_tool import ToolOutcome, ToolTurn
 from line_group_agent.agent.client_tools import ClientTools
+from line_group_agent.agent.group_headcount import GroupHeadcount
 from line_group_agent.agent.message_deleter import MessageDeleter
 from line_group_agent.agent.model_caller import ModelCaller
 from line_group_agent.agent.prompt import (
@@ -38,6 +40,7 @@ from line_group_agent.agent.prompt import (
     build_user_content,
     extract_reply,
     format_search_results,
+    members_line_of,
 )
 from line_group_agent.agent.slow_answer import is_slow_ahead
 from line_group_agent.agent.thinking_blocks import without_thinking
@@ -47,6 +50,7 @@ from line_group_agent.cards.card import Card
 from line_group_agent.cards.card_image_finder import CardImageFinder
 from line_group_agent.cards.card_input import parse_cards
 from line_group_agent.config.agent_config import AgentConfig
+from line_group_agent.events.speaker_lookup import speakers_in
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.line_api.quick_reply import QuickReplyItem
 from line_group_agent.media.photo_picker import PhotoPicker
@@ -64,6 +68,10 @@ logger = logging.getLogger(__name__)
 
 SlowNotice = Callable[[], Awaitable[None]]
 TOOL_FAILED_RESULT = "The tool failed and did nothing. Tell the group briefly, or try again."
+DUPLICATE_CALL_RESULT = (
+    "Same call as an earlier one in this answer, so it was run only once. "
+    "Use the result of that call."
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +104,7 @@ class Answerer:
         client_tools: ClientTools | None = None,
         photos: PhotoPicker | None = None,
         card_images: CardImageFinder | None = None,
+        headcount: GroupHeadcount | None = None,
     ) -> None:
         self.config = config
         self.caller = caller
@@ -106,6 +115,7 @@ class Answerer:
         self.client_tools = client_tools or ClientTools()
         self.photos = photos
         self.card_images = card_images
+        self.headcount = headcount
 
     async def answer(
         self,
@@ -148,7 +158,7 @@ class Answerer:
             logger.info("answer: budget left is below one mention; not calling the API")
             return Answer(budget.exhausted_text, record=False)
 
-        turn = self._user_turn(conversation, mention, is_name_only)
+        turn = await self._user_turn(conversation, mention, is_name_only)
         # Thinking of earlier turns is left out of the request (see `thinking_blocks`); the
         # blocks of this turn's own tool rounds are added below and stay.
         history = without_thinking(conversation.history())
@@ -262,25 +272,42 @@ class Answerer:
             return Answer(None)
         return Answer(self.config.error_text or None)
 
-    def _user_turn(
+    async def _user_turn(
         self, conversation: GroupConversation, mention: GroupMessage, is_name_only: bool
     ) -> str | list[dict[str, Any]]:
         """Return the user turn for this mention: the envelope, with the photos sent since
         the bot's last turn attached when photos are read."""
         group_id = conversation.group_id
         since = self._since_last_turn(conversation, mention)
+        members_line = await self._members_line(group_id)
         if conversation.starts_new_generation:
             recent = self.group_log.list_recent(
                 group_id, self.config.recent_message_count, exclude_message_id=mention.message_id
             )
             envelope = build_envelope(
-                recent, mention, summary=conversation.pending_summary, is_name_only=is_name_only
+                recent,
+                mention,
+                summary=conversation.pending_summary,
+                is_name_only=is_name_only,
+                members_line=members_line,
             )
         else:
-            envelope = build_envelope(since, mention, is_name_only=is_name_only)
+            envelope = build_envelope(
+                since, mention, is_name_only=is_name_only, members_line=members_line
+            )
         if self.photos is None:
             return envelope
         return build_user_content(envelope, self.photos.pick(group_id, since))
+
+    async def _members_line(self, group_id: str) -> str | None:
+        """Return the line that gives the group's size and the names the records know, or
+        None when the headcount is not set or LINE does not give the count."""
+        if self.headcount is None:
+            return None
+        count = await self.headcount.count_of(group_id)
+        if count is None:
+            return None
+        return members_line_of(count, list(speakers_in(self.group_log, group_id)))
 
     def _since_last_turn(
         self, conversation: GroupConversation, mention: GroupMessage
@@ -314,6 +341,7 @@ class Answerer:
         tools add their messages and quick replies to `output`."""
         results: list[dict[str, Any]] = []
         shown: list[Card] | None = None
+        run_calls: set[tuple[object, str]] = set()
         for block in content:
             if block.get("type") != "tool_use":
                 continue
@@ -335,6 +363,11 @@ class Answerer:
                 continue
             name = block.get("name")
             if self.client_tools.has(name):
+                call = (name, _input_key(block.get("input")))
+                if call in run_calls:
+                    results.append(_tool_result(block, DUPLICATE_CALL_RESULT))
+                    continue
+                run_calls.add(call)
                 turn = ToolTurn(conversation.group_id, mention, output)
                 outcome = await self._run_client_tool(str(name), block.get("input"), turn)
                 results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
@@ -374,6 +407,12 @@ class Answerer:
         if deleted == 0:
             return _tool_result(block, NOTHING_DELETED_RESULT)
         return _tool_result(block, f"Deleted {deleted} message(s) from the records.")
+
+
+def _input_key(tool_input: object) -> str:
+    """Return a text that is the same for two inputs that are the same JSON (the order of
+    keys does not matter)."""
+    return json.dumps(tool_input, sort_keys=True, ensure_ascii=False, default=str)
 
 
 def _text_of(answer: dict[str, Any]) -> str:

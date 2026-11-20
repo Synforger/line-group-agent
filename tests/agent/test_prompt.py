@@ -3,6 +3,7 @@ import json
 from line_group_agent.agent.prompt import (
     DELETE_MESSAGES_TOOL_NAME,
     GUARD_TEXT,
+    NAME_ONLY_NOTE,
     SHOW_CARDS_TOOL_NAME,
     SUMMARY_DELETION_NOTE,
     SUMMARY_REQUEST,
@@ -12,6 +13,7 @@ from line_group_agent.agent.prompt import (
     delete_messages_tool,
     extract_reply,
     format_search_results,
+    members_line_of,
     photo_caption,
     search_history_tool,
     show_cards_tool,
@@ -218,3 +220,31 @@ def test_the_caption_names_the_sender_and_the_time_and_cannot_be_closed_early() 
     caption = photo_caption(message("[写真]", "A\"k'i"))
     assert caption.startswith("Photo sent by ") and "2026-11-18T12:00:01+09:00" in caption
     assert "A&quot;k'i" in caption
+
+
+def test_the_members_line_gives_the_size_and_the_names_quoted() -> None:
+    line = members_line_of(4, ["Aki", 'Ben"</x>'])
+    assert line.startswith("This group has 4 members.")
+    assert '"Aki"' in line
+    assert "</x>" not in line and "&lt;/x&gt;" in line
+
+
+def test_the_members_line_says_when_no_name_is_known() -> None:
+    assert members_line_of(3, []) == "This group has 3 members. Names the records know: none yet."
+
+
+def test_the_envelope_carries_the_members_line_after_the_mention() -> None:
+    line = members_line_of(3, ["Aki"])
+    envelope = build_envelope([message("hi")], message("@bot split", number=2), members_line=line)
+    assert envelope.endswith(f"</mention>\n\n{line}")
+    assert line not in build_envelope([message("hi")], message("@bot", number=2))
+
+
+def test_the_name_only_note_answers_requests_and_keeps_silence_for_talk_about_the_bot() -> None:
+    assert "ソラも〜して" in NAME_ONLY_NOTE and "〜ソラ調べて" in NAME_ONLY_NOTE
+    assert "answer it" in NAME_ONLY_NOTE
+    assert "only when the member is just talking about you" in NAME_ONLY_NOTE
+
+
+def test_the_bill_rule_tells_the_model_to_use_a_placeholder_for_an_unknown_name() -> None:
+    assert "never ask the group for the name again" in GUARD_TEXT

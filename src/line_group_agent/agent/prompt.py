@@ -68,7 +68,9 @@ and when; ask only when you cannot decide. A refused call is explained to the me
 - get_itinerary with show_image sends the plan as images: use it when a member asks for \
 the plan as an image, and when you have just finished building it.
 - split_bill does the sums for dividing costs among members: give it who paid what for \
-whom, never calculate shares yourself.
+whom, never calculate shares yourself. When the envelope gives the size of the group and \
+a member's name is not known, enter that member under a placeholder such as "もう1人" and \
+calculate; never ask the group for the name again.
 - send_location shows one place on a map after your reply (one per reply); give a real \
 address and coordinates, never invented ones. A location a member shares shows in \
 <messages> as "[位置]" with its name, address and coordinates.
@@ -135,10 +137,13 @@ STAY_SILENT_REFUSED_RESULT = (
 )
 STAY_SILENT_SKIPPED_RESULT = "Not run: you chose to stay silent."
 NAME_ONLY_NOTE = (
-    "This message only contains your name; it did not mention you in LINE, so it may not "
-    "be addressed to you. Answer only when the member is talking to you or asks something "
-    "you should answer. Otherwise call stay_silent and write nothing."
+    "This message contains your name; it did not mention you in LINE. When the member wants "
+    'you to do something or to answer (a request such as "ソラも〜して" or "〜ソラ調べて"), '
+    "answer it. Call stay_silent and write nothing only when the member is just talking about "
+    "you, reacting, or joking."
 )
+MEMBERS_LINE_TEMPLATE = "This group has {count} members. Names the records know: {names}."
+NO_MEMBER_NAMES = "none yet"
 DELETED_MARK = "[deleted]"
 UNKNOWN_SPEAKER = "unknown"
 BOT_SPEAKER = "you"
@@ -171,13 +176,15 @@ def build_envelope(
     *,
     summary: str | None = None,
     is_name_only: bool = False,
+    members_line: str | None = None,
 ) -> str:
     """Return the user turn: group messages and the message that mentioned the bot,
     each wrapped so that a member cannot close the wrapping tag.
 
     With a `summary`, the turn opens a new conversation: it starts with the summary
     mark and the summary, then the envelope as usual. With `is_name_only`, the last
-    message only holds the bot's name, and the turn tells the model it may stay silent.
+    message contains the bot's name, and the turn tells the model it may stay silent.
+    A `members_line` (see `members_line_of`) is added after the mention.
     """
     lines = [message_element("message", message) for message in recent]
     body = "\n".join(lines)
@@ -190,11 +197,20 @@ def build_envelope(
         f"{lead}:\n"
         f"{message_element('mention', mention)}"
     )
+    if members_line is not None:
+        envelope = f"{envelope}\n\n{members_line}"
     if is_name_only:
         envelope = f"{envelope}\n\n{NAME_ONLY_NOTE}"
     if summary is None:
         return envelope
     return f"{SUMMARY_PREFIX}\n{summary.strip()}\n\n{envelope}"
+
+
+def members_line_of(member_count: int, known_names: list[str]) -> str:
+    """Return the line that tells the model how many members the group has and which of
+    them the records know by name; the names are data, so each is quoted."""
+    names = ", ".join(quoteattr(name) for name in known_names) or NO_MEMBER_NAMES
+    return MEMBERS_LINE_TEMPLATE.format(count=member_count, names=names)
 
 
 def photo_caption(message: GroupMessage) -> str:

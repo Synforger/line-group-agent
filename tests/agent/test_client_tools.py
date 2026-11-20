@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from line_group_agent.agent.answerer import DUPLICATE_CALL_RESULT
 from line_group_agent.agent.client_tool import ClientTool, ToolOutcome, ToolTurn
 from line_group_agent.agent.client_tools import ClientTools
 from line_group_agent.agent.turn_output import MAX_EXTRA_MESSAGES, TurnOutput
@@ -126,3 +127,72 @@ async def test_a_tool_that_waits_is_awaited_and_the_loop_keeps_running_meanwhile
     assert (await asyncio.wait_for(turn, timeout=5)).text == "done"
     [tool_result] = world.client.messages.requests[1]["messages"][-1]["content"]
     assert tool_result["content"] == "waited"
+
+
+def counting_tool(name: str, runs: list[object]) -> ClientTool:
+    def run(tool_input: object, _turn: ToolTurn) -> ToolOutcome:
+        runs.append(tool_input)
+        return ToolOutcome(f"run {len(runs)}")
+
+    return ClientTool(name, {"name": name, "description": "d", "input_schema": {}}, run)
+
+
+def calls_together(*blocks: tuple[str, str, dict[str, object]]) -> dict[str, object]:
+    content = [
+        {"type": "tool_use", "id": id_, "name": name, "input": data} for id_, name, data in blocks
+    ]
+    return answer(content, stop_reason="tool_use")
+
+
+async def test_the_same_call_twice_in_one_answer_runs_once(tmp_path: Path) -> None:
+    runs: list[object] = []
+    world = build_world(
+        tmp_path,
+        [
+            calls_together(
+                ("toolu_1", "poll", {"question": "Where?", "options": ["A", "B"]}),
+                ("toolu_2", "poll", {"options": ["A", "B"], "question": "Where?"}),
+            ),
+            text_answer("<reply>done</reply>", message_id="msg_2"),
+        ],
+        tools=[counting_tool("poll", runs)],
+    )
+    await world.answerer.answer(GROUP, MENTION)
+    assert len(runs) == 1
+    first, second = world.client.messages.requests[1]["messages"][-1]["content"]
+    assert (first["tool_use_id"], first["content"]) == ("toolu_1", "run 1")
+    assert (second["tool_use_id"], second["content"]) == ("toolu_2", DUPLICATE_CALL_RESULT)
+    assert "is_error" not in second
+
+
+async def test_calls_that_differ_in_the_input_or_the_tool_all_run(tmp_path: Path) -> None:
+    runs: list[object] = []
+    world = build_world(
+        tmp_path,
+        [
+            calls_together(
+                ("toolu_1", "poll", {"question": "Where?"}),
+                ("toolu_2", "poll", {"question": "When?"}),
+                ("toolu_3", "other", {"question": "Where?"}),
+            ),
+            text_answer("<reply>done</reply>", message_id="msg_2"),
+        ],
+        tools=[counting_tool("poll", runs), counting_tool("other", runs)],
+    )
+    await world.answerer.answer(GROUP, MENTION)
+    assert len(runs) == 3
+
+
+async def test_the_same_call_in_a_later_round_runs_again(tmp_path: Path) -> None:
+    runs: list[object] = []
+    world = build_world(
+        tmp_path,
+        [
+            calls_together(("toolu_1", "poll", {"question": "Where?"})),
+            calls_together(("toolu_2", "poll", {"question": "Where?"})),
+            text_answer("<reply>done</reply>", message_id="msg_3"),
+        ],
+        tools=[counting_tool("poll", runs)],
+    )
+    await world.answerer.answer(GROUP, MENTION)
+    assert len(runs) == 2
