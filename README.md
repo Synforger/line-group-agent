@@ -261,8 +261,10 @@ uv run python -m line_group_agent.simulator \
       {"from": "Uben", "text": "Somewhere with temples", "mention": true},
       {"from": "Uaki", "press": {"reply_index": 0, "action_index": 1}},
       {"open_liff": {"reply_index": 0, "action_index": 0}},
+      {"from": "Uben", "liff_click": {"reply_index": 0, "action_index": 0, "selector": "button"}},
       {"from": "Uben", "image": "menu.jpg"},
       {"from": "Uaki", "location": {"title": "Cafe", "address": "Kyoto", "latitude": 35.01, "longitude": 135.76}},
+      {"from": "Uben", "sticker": {"package_id": "8515", "sticker_id": "16581243", "keywords": ["thanks"]}},
       {"wait_seconds": 2},
       {"advance_minutes": 120}
     ]
@@ -277,7 +279,18 @@ uv run python -m line_group_agent.simulator \
   its text, then its button; quick reply buttons last). The chat page prints each button's number.
   A card button that sends a postback or a quick reply button that sends a text is sent to the
   agent like LINE sends it. An `open_liff` step opens the LIFF page a card links to as a
-  member (`from`, the first member when left out) and takes its picture. A `wait_seconds` step
+  member (`from`, the first member when left out) and takes its picture. A `liff_click` step
+  opens the page the same way (`reply_index` and `action_index` pick the card's button, `from`
+  defaults to the first member), then presses the first element the CSS `selector` names and
+  takes the picture after the press. What the page sent as the member (`liff.sendMessages`) shows
+  in the chat as that member's own message and reaches the agent like a typed one; what it passed
+  to the share picker (`liff.shareTargetPicker`) is drawn as the receiver would see it. Both are
+  kept in `transcript.json` (`liff_sent`, `liff_shared`), and an element that cannot be pressed
+  is noted on the step. A `sticker` step sends a sticker as a member: `package_id` and
+  `sticker_id` are written in digits, and the optional `keywords` list is what LINE would give the
+  bot for it. The agent records it in the talk as `(スタンプ: <keywords>)`; a sticker never calls
+  the bot, so the step is not answered by itself. The chat page shows it as a box with the ids and
+  keywords, not the picture. A `wait_seconds` step
   waits in real time; an `advance_minutes` step moves the agent's clock forward by that many
   minutes (1 to 129,600) and runs its timed work once, so a reminder that has come due is sent and
   shows in the chat as a push. Image paths are read from the scenario file's folder.

@@ -49,6 +49,10 @@
   "liff_max_body_bytes": 1024,
   "liff_max_failed_verifies_per_minute": 30,
   "liff_max_failed_verifies_per_source_per_minute": 10,
+  "stickers": {
+    "ありがとう": {"package_id": "8515", "sticker_id": "16581243"},
+    "了解": {"package_id": "8515", "sticker_id": "16581242"}
+  },
   "web_search": {"type": "web_search_20250305", "max_uses": 3},
   "web_fetch": {"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000},
   "prices_usd": {
