@@ -281,12 +281,13 @@ class EventDispatcher:
             elif verdict is MentionVerdict.REFUSE_AND_TELL:
                 await self._tell_rate_limit(group_id, event)
             return
-        if not is_name_only:
-            if self._asks_for_help(event):
-                await self._send_help(group_id, event)
-                return
-            if await self._send_itinerary(group_id, event):
-                return
+        # A message that is only the name and a keyword ("ソラ使い方") asks for it however the
+        # name was written; a name in a longer sentence never matches a keyword exactly.
+        if self._asks_for_help(event):
+            await self._send_help(group_id, event)
+            return
+        if await self._send_itinerary(group_id, event):
+            return
         await self._answer_mention(group_id, event, record, is_name_only=is_name_only)
 
     async def _content_of(

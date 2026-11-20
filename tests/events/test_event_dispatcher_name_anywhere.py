@@ -144,3 +144,13 @@ async def test_without_the_setting_a_name_that_runs_on_is_a_call(tmp_path: Path)
     dispatcher, _, answerer = build(tmp_path, is_anywhere=False, call_name_start_runs_on=True)
     await dispatcher.handle(text_event(text="ソラ候補出して"))
     assert answerer.name_only_flags == [False]
+
+
+async def test_a_name_run_on_into_a_keyword_gets_the_list(tmp_path: Path) -> None:
+    dispatcher, line, answerer = build(
+        tmp_path,
+        call_name_start_runs_on=True,
+        texts=NoticeTexts(help="The list.", help_keywords=("使い方",)),
+    )
+    await dispatcher.handle(text_event(text="ソラ使い方"))
+    assert answerer.calls == [] and line.replies == [("reply-token-1", "The list.")]
