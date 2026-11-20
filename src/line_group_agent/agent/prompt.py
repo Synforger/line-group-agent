@@ -109,6 +109,10 @@ NO_VALID_CARDS_RESULT = (
 )
 NOTHING_DELETED_RESULT = "No message of yours or of mine matches. Nothing was deleted."
 STAY_SILENT_RESULT = "Nothing will be sent to the group."
+STAY_SILENT_WITH_ACTIONS_RESULT = (
+    "stay_silent was ignored because this turn also asked for other tools, which ran. "
+    "Answer inside <reply>."
+)
 STAY_SILENT_REFUSED_RESULT = (
     "stay_silent is not available for this message: it is addressed to you. "
     "Answer it inside <reply>."

@@ -258,8 +258,13 @@ class EventDispatcher:
 
         if kind != TEXT_KIND:
             return
+        # With call_name_anywhere, a name that runs on into the words ("ソラって便利") is
+        # read like a name in the text, so the model may stay silent; only a name set off
+        # by punctuation or a space is a sure call.
         is_called = is_self_mentioned(event) or is_called_by_name(
-            event, self.call_names, start_runs_on=self.call_name_start_runs_on
+            event,
+            self.call_names,
+            start_runs_on=self.call_name_start_runs_on and not self.call_name_anywhere,
         )
         is_name_only = (
             not is_called and self.call_name_anywhere and is_name_in_text(event, self.call_names)
