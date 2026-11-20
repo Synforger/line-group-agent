@@ -47,7 +47,10 @@ prompt cache, does not change from one turn to the next.
 
 When one answer of the model calls the same tool twice with the same input (the same JSON,
 whatever the order of the keys), the second call is not run: it gets a short result that says
-it was run once. This holds for every group tool, so a poll is not started twice.
+it was run once. This holds for every group tool, so a poll is not started twice. One answer also
+makes one poll at most: after `create_poll` or `create_date_poll` made one, a later poll-making call
+of the same answer (this round or a later one) is not run and gets a result that names the poll
+already made; the next reply can make another.
 
 ## An answer without `<reply>`
 

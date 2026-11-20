@@ -10,6 +10,7 @@ which adds the tools to the client tools.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -31,6 +32,8 @@ CREATE_DATE_POLL_TOOL_NAME = "create_date_poll"
 POLL_RESULTS_TOOL_NAME = "poll_results"
 CLOSE_POLL_TOOL_NAME = "close_poll"
 WITHDRAW_VOTE_TOOL_NAME = "withdraw_vote"
+# The tools that make a poll: one request gets one of them (see `made_poll_id`).
+POLL_MAKING_TOOL_NAMES = frozenset({CREATE_POLL_TOOL_NAME, CREATE_DATE_POLL_TOOL_NAME})
 MIN_OPTION_COUNT = 2
 MAX_OPTION_COUNT = 10
 NO_ROOM_RESULT = "This reply already holds as many extra messages as LINE allows. Nothing was made."
@@ -39,6 +42,15 @@ CLOSED_POLL_RESULT = "That poll is closed, so votes can no longer change."
 UNKNOWN_MEMBER_RESULT = "The member who asked cannot be identified, so no vote was taken back."
 NO_VOTE_RESULT = "That member has no vote in the poll, so nothing was taken back."
 NO_TEST_POLL_SENTENCE = "Do not make a poll to test the tools."
+POLL_MADE_RESULT = (
+    "Poll {poll_id} is sent as a card after your reply. Members vote from it; "
+    "votes are counted without you, so call poll_results when someone asks for the count."
+)
+POLL_MADE_PATTERN = re.compile(r"^Poll (\S+) is sent as a card")
+POLL_ALREADY_MADE_RESULT = (
+    "This answer already made poll {poll_id}, so this poll was not made. One request gets "
+    "one poll. If another poll is needed, make it in the next reply."
+)
 BAD_OPTIONS_RESULT = (
     f"Give a question and {MIN_OPTION_COUNT} to {MAX_OPTION_COUNT} different, non-empty options."
 )
@@ -60,10 +72,7 @@ def poll_tools(book: PollBook, *, liff_id: str | None = None) -> list[ClientTool
             return ToolOutcome(NO_ROOM_RESULT, is_error=True)
         poll = book.create(turn.group_id, question, labels, kind=kind, multiple=multiple)
         turn.output.add(_extra_of(poll, liff_id))
-        return ToolOutcome(
-            f"Poll {poll.id} is sent as a card after your reply. Members vote from it; "
-            "votes are counted without you, so call poll_results when someone asks for the count."
-        )
+        return ToolOutcome(POLL_MADE_RESULT.format(poll_id=poll.id))
 
     def create(tool_input: object, turn: ToolTurn) -> ToolOutcome:
         fields = tool_input if isinstance(tool_input, dict) else {}
@@ -122,6 +131,15 @@ def poll_tools(book: PollBook, *, liff_id: str | None = None) -> list[ClientTool
     ]
 
 
+def made_poll_id(outcome: ToolOutcome) -> str | None:
+    """Return the id of the poll that a poll-making tool's outcome says it made, or None for
+    an outcome of a call that made nothing."""
+    if outcome.is_error:
+        return None
+    found = POLL_MADE_PATTERN.match(outcome.content)
+    return found.group(1) if found else None
+
+
 def clean_labels(raw: object) -> list[str] | None:
     """Return the options (or dates) as short one-line labels, or None unless there are 2 to
     10 different non-empty ones."""
@@ -162,7 +180,8 @@ def _create_definition() -> dict[str, Any]:
             "from it by pressing an option's button or the button that opens the voting page, "
             "one vote each (or several with multiple). Picking the option already picked "
             "changes nothing in a one-vote poll; a member takes a vote back by asking you "
-            "(withdraw_vote). Use it when a member asks for a vote. "
+            "(withdraw_vote). Use it when a member asks for a vote. For candidate dates use "
+            "create_date_poll instead, and never make a create_poll with the same dates. "
             f"{NO_TEST_POLL_SENTENCE} Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} options of at most "
             f"{OPTION_MAX_CHARS} characters each."
@@ -196,7 +215,9 @@ def _create_date_definition() -> dict[str, Any]:
             "Find a date that suits everyone. It is sent as a card after your reply, with a "
             "button per candidate date or one that opens the voting page; a member marks every "
             "date that suits them, and marks again to take it back. Use it when members need "
-            "to agree on a date. poll_results then gives each date's count and names. "
+            "to agree on a date. A poll about dates is made with this tool only: do not also "
+            "make a create_poll with the same dates. poll_results then gives each date's "
+            "count and names. "
             f"{NO_TEST_POLL_SENTENCE} Write a short sentence "
             f"inside <reply> too. Up to {MAX_OPTION_COUNT} dates of at most "
             f"{OPTION_MAX_CHARS} characters each, like 11/23(Sat)."
