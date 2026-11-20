@@ -129,3 +129,19 @@ def test_with_a_liff_app_the_page_and_its_api_are_beside_the_webhook(tmp_path: P
     assert page.status_code == 200 and '"1234567890-AbCdEfGh"' in page.text
     assert client.post("/liff/api/poll", content=b"{}").status_code == 401
     assert client.post("/line/webhook", content=b"{}").status_code == 401
+
+
+def test_the_app_gives_a_runner_the_reminder_round_to_run_by_hand(tmp_path: Path) -> None:
+    from line_group_agent.service.service_builder import build_app
+    from tests.fakes import make_config
+
+    config = make_config(tmp_path)
+    config.persona_file.write_text("You are a helper.")
+    for secret_file in (
+        config.anthropic_api_key_file,
+        config.line_channel_secret_file,
+        config.line_channel_access_token_file,
+    ):
+        secret_file.write_text("secret\n")
+    app = build_app(config)
+    assert callable(app.state.run_reminder_round)

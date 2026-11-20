@@ -13,6 +13,7 @@ import json
 import mimetypes
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,7 @@ from line_group_agent.simulator.id_token import make_id_token
 from line_group_agent.simulator.message_actions import list_actions
 from line_group_agent.simulator.scenario import (
     ActionRef,
+    AdvanceStep,
     ImageStep,
     LocationStep,
     OpenLiffStep,
@@ -35,6 +37,7 @@ from line_group_agent.simulator.scenario import (
     TextStep,
     WaitStep,
 )
+from line_group_agent.simulator.scenario_clock import ScenarioClock
 from line_group_agent.simulator.screen_capture import ScreenCapture
 from line_group_agent.simulator.transcript import (
     OutputRecord,
@@ -83,6 +86,8 @@ class ScenarioRunner:
         bot_url: str,
         channel_secret: str,
         event_sink: EventSink,
+        clock: ScenarioClock,
+        run_reminder_round: Callable[[], Awaitable[None]],
         state_dir: Path,
         currency: str,
         currency_per_usd: float,
@@ -96,6 +101,8 @@ class ScenarioRunner:
         self._bot_url = bot_url
         self._channel_secret = channel_secret
         self._sink = event_sink
+        self._clock = clock
+        self._run_reminder_round = run_reminder_round
         self._state_dir = state_dir
         self._currency = currency
         self._currency_per_usd = currency_per_usd
@@ -181,6 +188,10 @@ class ScenarioRunner:
         if isinstance(step, WaitStep):
             record.shown = {"type": "wait", "seconds": step.seconds}
             await asyncio.sleep(step.seconds)
+        elif isinstance(step, AdvanceStep):
+            record.shown = {"type": "advance", "minutes": step.minutes}
+            self._clock.advance(step.minutes)
+            await self._run_reminder_round()
         elif isinstance(step, TextStep):
             mention = (
                 BotMention(self.scenario.bot_user_id, self.scenario.bot_name)
@@ -339,6 +350,7 @@ def _kind_of(step: Step) -> str:
         PressStep: "press",
         OpenLiffStep: "open_liff",
         WaitStep: "wait",
+        AdvanceStep: "advance",
     }[type(step)]
 
 

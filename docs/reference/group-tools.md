@@ -110,6 +110,34 @@ The model then tells the group.
   a yen. The result says how many yen that was and the bot is told to mention it
 - Nothing is stored: the tool calculates from what the model gives it each time
 
+## Reminders
+
+A member can ask the bot to say something to the group at a set time ("tell us to gather at 21:00
+the evening before", "remind Aki about the tickets on Friday morning"). At that time the bot
+sends the text to the group by itself, without anyone mentioning it. The model sets it with
+`set_reminder` (when, what, and optionally the display names of the members to call);
+`list_reminders` shows the waiting ones with their ids and how many of the month are used, and
+`cancel_reminder` removes one by id.
+
+- **"Set a reminder" alone is enough.** When a member asks for one without saying when or what,
+  the model decides both from the conversation and the [itinerary](#trip-itinerary), sets it,
+  and says in one line what it set and when. It asks a short question only when it cannot decide
+- **The text is sent as it was set**, with no label such as "Reminder:" in front. To call
+  members, their names are written as `@name` before the text
+- **Times are in Japan time.** A time given without an offset is taken as Japan time. A time
+  that has already passed, or is more than 60 days ahead, is refused
+- **A group may have `max_reminders_per_group_per_month` reminders (10 by default) fall due in
+  one month.** Each costs one message of the account's monthly allowance, since it goes out as a
+  push. A reminder that is cancelled, missed or given up is not counted. Past the limit the call is
+  refused and the model tells the members why. It is also refused while LINE reports fewer than
+  `wait_min_push_left` messages left this month (the same figure the wait text uses; the figure
+  is refreshed with each round below, so it is at most an hour old)
+- **A round runs every minute** and sends every reminder whose time has come. A send that fails
+  is tried once more at the next round; when that fails too, the reminder is given up and the
+  agent logs one line with its id and the status. When the agent was not running at the time, a
+  reminder at most 30 minutes late is still sent; an older one is not sent and is logged
+- A sent reminder is not written into the group's record
+
 ## Photos
 
 A photo a member sends to the group is kept (the agent reads it from LINE as soon as it

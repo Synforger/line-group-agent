@@ -5,6 +5,7 @@ import pytest
 
 from line_group_agent.simulator.scenario import (
     ActionRef,
+    AdvanceStep,
     ImageStep,
     LocationStep,
     OpenLiffStep,
@@ -39,6 +40,7 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
             {"from": "Ub", "press": {"reply_index": 0, "action_index": 2}},
             {"open_liff": {"reply_index": 1, "action_index": 0}},
             {"wait_seconds": 2},
+            {"advance_minutes": 90},
         ),
         tmp_path,
         "trip",
@@ -50,6 +52,7 @@ def test_every_kind_of_step_is_read(tmp_path: Path) -> None:
         PressStep("Ub", ActionRef(0, 2)),
         OpenLiffStep("Ua", ActionRef(1, 0)),
         WaitStep(2.0),
+        AdvanceStep(90),
     )
     assert scenario.group.id == "Cgroup1" and scenario.bot_name == "Assistant"
     assert scenario.member_named("Ub").name == "Ben"
@@ -74,6 +77,11 @@ def test_the_bot_can_be_given_a_name() -> None:
         ({"from": "Ua", "press": {"reply_index": 0}}, "action_index"),
         ({"wait_seconds": "soon"}, "wait_seconds must be a number"),
         ({"wait_seconds": 100000}, "wait_seconds must be between"),
+        ({"advance_minutes": "soon"}, "advance_minutes must be a whole number"),
+        ({"advance_minutes": 1.5}, "advance_minutes must be a whole number"),
+        ({"advance_minutes": True}, "advance_minutes must be a whole number"),
+        ({"advance_minutes": 0}, "advance_minutes must be between 1 and"),
+        ({"advance_minutes": 999999}, "advance_minutes must be between 1 and"),
     ],
 )
 def test_a_bad_step_names_itself(step: dict[str, Any], message: str, tmp_path: Path) -> None:

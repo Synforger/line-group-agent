@@ -42,6 +42,7 @@ folder that holds the file. Settings are not taken from environment variables.
 | `error_text` | `Something went wrong, so I could not answer. Please try again in a bit.` | Sent when no answer could be made for a reason other than the budget or the API failing. Empty: nothing is sent |
 | `wait_text` | `Looking that up, one moment.` | Sent first when the answer will take a while, and the answer follows as a push message. Empty: never sent |
 | `wait_min_push_left` | `20` | The wait text is sent only when LINE reports at least this many messages left this month (0 or more) |
+| `max_reminders_per_group_per_month` | `10` | Most [reminders](group-tools.md#reminders) one group may have fall due in a calendar month (Japan time); 0 or more, and 0 refuses every new reminder. Each one sent is a push message, so it counts against the account's monthly quota |
 | `max_mentions_per_user_per_hour` | `20` | Most mentions of the bot one person gets answered in an hour (1 or more) |
 | `rate_limit_text` | `You have asked a lot in the last hour. Please try again a little later.` | Sent the first time a person passes the limit. Empty: nothing is sent |
 | `retention_days` | `30` | Group messages and conversation rows older than this are deleted once a day, except the running conversation's; the summaries are kept. See [Deleting messages](deleting.md) (1 or more) |

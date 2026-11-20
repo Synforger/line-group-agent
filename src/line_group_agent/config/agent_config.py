@@ -46,6 +46,7 @@ DEFAULT_EXHAUSTED_TEXT = "This month's budget is used up."
 DEFAULT_ERROR_TEXT = "Something went wrong, so I could not answer. Please try again in a bit."
 DEFAULT_WAIT_TEXT = "Looking that up, one moment."
 DEFAULT_WAIT_MIN_PUSH_LEFT = 20
+DEFAULT_MAX_REMINDERS_PER_GROUP_PER_MONTH = 10
 DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR = 20
 DEFAULT_RATE_LIMIT_TEXT = "You have asked a lot in the last hour. Please try again a little later."
 DEFAULT_RETENTION_DAYS = 30
@@ -150,6 +151,7 @@ class AgentConfig:
     error_text: str
     wait_text: str
     wait_min_push_left: int
+    max_reminders_per_group_per_month: int
     max_mentions_per_user_per_hour: int
     rate_limit_text: str
     retention_days: int
@@ -252,6 +254,12 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
         wait_text=_optional(raw, "wait_text", str, DEFAULT_WAIT_TEXT),
         wait_min_push_left=_at_least(
             raw, "wait_min_push_left", DEFAULT_WAIT_MIN_PUSH_LEFT, minimum=0
+        ),
+        max_reminders_per_group_per_month=_at_least(
+            raw,
+            "max_reminders_per_group_per_month",
+            DEFAULT_MAX_REMINDERS_PER_GROUP_PER_MONTH,
+            minimum=0,
         ),
         max_mentions_per_user_per_hour=_at_least(
             raw, "max_mentions_per_user_per_hour", DEFAULT_MAX_MENTIONS_PER_USER_PER_HOUR

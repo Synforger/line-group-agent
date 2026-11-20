@@ -15,6 +15,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from line_group_agent.simulator.fake_line_server import FakeLineServer
 from line_group_agent.simulator.local_server import LocalServer
 from line_group_agent.simulator.report_writer import write_index, write_scenario_report
 from line_group_agent.simulator.scenario import Scenario
+from line_group_agent.simulator.scenario_clock import ScenarioClock
 from line_group_agent.simulator.scenario_runner import ScenarioRunner
 from line_group_agent.simulator.screen_capture import ScreenCapture, ScreensUnavailableError
 from line_group_agent.simulator.transcript import ScenarioTranscript
@@ -51,7 +53,7 @@ class SimulationOptions:
     with_screens: bool = True
 
 
-BotBuilder = Callable[[AgentConfig], FastAPI]
+BotBuilder = Callable[[AgentConfig, Callable[[], datetime]], FastAPI]
 
 
 async def run_simulation(
@@ -119,7 +121,8 @@ async def _run_scenario(
             line_api_base_url=line_server.base_url,
             line_data_api_base_url=line_server.base_url,
         )
-        app = build_bot(bot_config)
+        clock = ScenarioClock()
+        app = build_bot(bot_config, clock)
         bot_server = LocalServer(app)
         await bot_server.start()
         try:
@@ -129,6 +132,8 @@ async def _run_scenario(
                 bot_url=bot_server.base_url,
                 channel_secret=load_secrets(bot_config).line_channel_secret,
                 event_sink=app.state.event_sink,
+                clock=clock,
+                run_reminder_round=app.state.run_reminder_round,
                 state_dir=run_dir,
                 currency=config.budget.currency,
                 currency_per_usd=config.budget.currency_per_usd,
