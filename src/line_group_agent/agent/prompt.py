@@ -113,6 +113,9 @@ STAY_SILENT_WITH_ACTIONS_RESULT = (
     "stay_silent was ignored because this turn also asked for other tools, which ran. "
     "Answer inside <reply>."
 )
+STAY_SILENT_WITH_REPLY_RESULT = (
+    "stay_silent was ignored because this turn also wrote a reply, which was sent."
+)
 STAY_SILENT_REFUSED_RESULT = (
     "stay_silent is not available for this message: it is addressed to you. "
     "Answer it inside <reply>."

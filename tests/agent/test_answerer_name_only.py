@@ -13,6 +13,7 @@ from line_group_agent.agent.prompt import (
     STAY_SILENT_REFUSED_RESULT,
     STAY_SILENT_RESULT,
     STAY_SILENT_WITH_ACTIONS_RESULT,
+    STAY_SILENT_WITH_REPLY_RESULT,
 )
 from line_group_agent.config.agent_config import DEFAULT_ERROR_TEXT
 from line_group_agent.records.group_log import GroupMessage
@@ -102,12 +103,6 @@ async def test_stay_silent_with_other_calls_runs_them_and_answers(tmp_path: Path
     assert results[1].get("is_error") is not True
 
 
-async def test_text_written_with_stay_silent_is_not_sent(tmp_path: Path) -> None:
-    text = {"type": "text", "text": "<reply>hello</reply>"}
-    world = build(tmp_path, [silent_call(text)])
-    assert await world.answerer.answer(GROUP, message(), is_name_only=True) == Answer(None)
-
-
 async def test_an_answer_without_stay_silent_is_sent_as_usual(tmp_path: Path) -> None:
     world = build(tmp_path, [text_answer("<reply>Try Gion.</reply>")])
     assert (await world.answerer.answer(GROUP, message(), is_name_only=True)).text == "Try Gion."
@@ -144,3 +139,12 @@ async def test_the_next_turn_follows_a_silent_one_without_its_message_again(
     request = world.client.messages.requests[1]["messages"]
     assert [m["role"] for m in request] == ["user", "assistant", "user", "user"]
     assert first.text not in json.dumps(request[3], ensure_ascii=False)
+
+
+async def test_a_reply_written_with_stay_silent_is_sent(tmp_path: Path) -> None:
+    reply = {"type": "text", "text": "<reply>Sunny, rain at night.</reply>"}
+    world = build(tmp_path, [silent_call(reply)])
+    result = await world.answerer.answer(GROUP, message(), is_name_only=True)
+    assert result.text == "Sunny, rain at night."
+    results = world.conversations.get(GROUP).messages[2]["content"]
+    assert results[0]["content"] == STAY_SILENT_WITH_REPLY_RESULT
