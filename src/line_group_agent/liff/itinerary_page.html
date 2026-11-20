@@ -168,6 +168,19 @@
   }
   .empty { color: var(--muted); font-size: 0.9375rem; margin: 24px 0; }
   .empty:empty { display: none; }
+  .share-area { margin: 20px 0 0; }
+  .share-area[hidden] { display: none; }
+  .share {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    background: var(--card);
+    border: 0;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .share-area .hint { color: var(--muted); font-size: 0.75rem; margin: 6px 2px 0; }
   .problem { color: var(--problem); font-size: 0.9375rem; margin: 12px 0 0; }
   .problem:empty { display: none; }
   dialog {
@@ -218,6 +231,10 @@
     <div id="timeline" class="timeline"></div>
     <p id="empty" class="empty"></p>
   </section>
+  <div id="share-area" class="share-area" hidden>
+    <button id="share" class="share" type="button">ほかのトークに送る</button>
+    <p class="hint">送った先でも、このグループのメンバー以外はこの予定表を開けません。</p>
+  </div>
   <p id="problem" class="problem" role="status"></p>
 </main>
 <dialog id="detail" aria-labelledby="detail-title">
@@ -263,6 +280,12 @@
     503: "いま LINE とつながりません。少し待ってからもう一度お願いします。"
   };
   var OTHER_PROBLEM = "うまくいきませんでした。もう一度お試しください。";
+  var SHARE_PROBLEM = "ほかのトークに送れませんでした。もう一度お試しください。";
+  var LIFF_URL = "https://liff.line.me/";
+  var NEXT_ITEM_COUNT = 3;
+  var ALT_TEXT_MAX = 400;
+  var BUTTON_LABEL = "予定表を開く";
+  var ACCENT = "#2f6fe4";
 
   var title = document.getElementById("title");
   var range = document.getElementById("range");
@@ -275,6 +298,8 @@
   var empty = document.getElementById("empty");
   var problem = document.getElementById("problem");
   var reload = document.getElementById("reload");
+  var shareArea = document.getElementById("share-area");
+  var shareButton = document.getElementById("share");
   var detail = document.getElementById("detail");
   var linkId = null;
   var view = null;
@@ -532,6 +557,94 @@
     if (selected && selected.scrollIntoView) selected.scrollIntoView({ inline: "center", block: "nearest" });
   }
 
+  function nextItemsOf(plan) {
+    var today = localIsoDate();
+    var now = new Date();
+    var minute = now.getHours() * HOUR_MINUTES + now.getMinutes();
+    var found = [];
+    plan.days.forEach(function (day) {
+      if (day.date && day.date < today) return;
+      var isToday = day.date === today;
+      day.unscheduled.forEach(function (item) {
+        found.push({ day: day, item: item });
+      });
+      day.scheduled.forEach(function (item) {
+        if (!isToday || item.bottom_min > minute) found.push({ day: day, item: item });
+      });
+    });
+    return found.slice(0, NEXT_ITEM_COUNT);
+  }
+
+  function lineOf(entry) {
+    var when = entry.day.date ? monthDay(entry.day.date) : entry.day.day + "日目";
+    return when + " " + (entry.item.start || "時間未定") + " " + entry.item.title;
+  }
+
+  function shareMessage() {
+    var name = view.title || "旅の予定表";
+    var next = nextItemsOf(view);
+    var lines = next.map(function (entry) {
+      return { type: "text", text: lineOf(entry), size: "sm", wrap: true };
+    });
+    if (lines.length === 0) {
+      lines.push({
+        type: "text",
+        text: view.days.length === 0 ? "まだ予定がありません。" : "予定はすべて終わりました。",
+        size: "sm",
+        color: "#666666",
+        wrap: true
+      });
+    } else {
+      lines.unshift({ type: "text", text: "次の予定", size: "xs", color: "#666666" });
+    }
+    return {
+      type: "flex",
+      altText: ("予定表: " + name).slice(0, ALT_TEXT_MAX),
+      contents: {
+        type: "bubble",
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: [{ type: "text", text: name, weight: "bold", size: "lg", wrap: true }].concat(lines)
+        },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "button",
+              style: "primary",
+              color: ACCENT,
+              action: {
+                type: "uri",
+                label: BUTTON_LABEL,
+                uri: LIFF_URL + LIFF_ID + "/itinerary?i=" + encodeURIComponent(linkId)
+              }
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  async function share() {
+    if (!view) return;
+    try {
+      await liff.shareTargetPicker([shareMessage()], { isMultiple: true });
+    } catch (error) {
+      problem.textContent = SHARE_PROBLEM;
+    }
+  }
+
+  function shareAvailable() {
+    try {
+      return liff.isApiAvailable("shareTargetPicker");
+    } catch (error) {
+      return false;
+    }
+  }
+
   async function load() {
     if (isBusy) return;
     isBusy = true;
@@ -564,10 +677,15 @@
       return;
     }
     await load();
-    if (!view) title.textContent = "予定表を開けませんでした";
+    if (!view) {
+      title.textContent = "予定表を開けませんでした";
+      return;
+    }
+    shareArea.hidden = !shareAvailable();
   }
 
   reload.addEventListener("click", load);
+  shareButton.addEventListener("click", share);
   document.getElementById("detail-close").addEventListener("click", closeDetail);
   detail.addEventListener("click", function (event) {
     if (event.target === detail) closeDetail();

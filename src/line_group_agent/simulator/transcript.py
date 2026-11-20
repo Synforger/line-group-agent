@@ -36,7 +36,9 @@ class SpendFigure:
 class StepRecord:
     """One step: its `input` as the scenario gave it, what `shown` in the chat for the
     member, the webhook `event` sent (None when none was), the bot's `outputs`, the seconds
-    until the bot was done and the spend of the step."""
+    until the bot was done and the spend of the step. A LIFF page the member used leaves its
+    `screen`, the messages it had sent as the member (`liff_sent`) and what it passed to the
+    share target picker (`liff_shared`)."""
 
     index: int
     kind: str
@@ -52,6 +54,8 @@ class StepRecord:
     note: str | None = None
     error: str | None = None
     screen: str | None = None
+    liff_sent: list[dict[str, Any]] = field(default_factory=list)
+    liff_shared: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

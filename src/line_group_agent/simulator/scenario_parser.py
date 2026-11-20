@@ -17,6 +17,7 @@ from line_group_agent.simulator.scenario import (
     AdvanceStep,
     Group,
     ImageStep,
+    LiffClickStep,
     LocationStep,
     Member,
     OpenLiffStep,
@@ -92,7 +93,8 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
                 f"{where}: advance_minutes must be between 1 and {MAX_ADVANCE_MINUTES}"
             )
         return AdvanceStep(minutes)
-    sender = step.get("from", member_ids[0] if "open_liff" in step else None)
+    is_liff = "open_liff" in step or "liff_click" in step
+    sender = step.get("from", member_ids[0] if is_liff else None)
     if sender not in member_ids:
         raise ScenarioError(f"{where}: from must be the user_id of a member of the group")
     if "text" in step:
@@ -108,9 +110,12 @@ def _parse_step(raw: Any, number: int, member_ids: list[str], base_dir: Path) ->
         return PressStep(sender, _parse_target(step["press"], where))
     if "open_liff" in step:
         return OpenLiffStep(sender, _parse_target(step["open_liff"], where))
+    if "liff_click" in step:
+        click = _object(step["liff_click"], f"{where}: liff_click")
+        return LiffClickStep(sender, _parse_target(click, where), _string(click, "selector", where))
     raise ScenarioError(
-        f"{where}: needs one of text, image, location, press, open_liff, wait_seconds "
-        "or advance_minutes"
+        f"{where}: needs one of text, image, location, press, open_liff, liff_click, "
+        "wait_seconds or advance_minutes"
     )
 
 

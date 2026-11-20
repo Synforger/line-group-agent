@@ -1,6 +1,7 @@
 """Draw a scripted chat as one HTML file at a phone's width: each member's bubbles with their
 names, the bot's text, Flex cards and carousels, quick reply buttons, photos, pins and the
-LIFF pages that were opened, with the seconds and the spend of each step under the answer.
+LIFF pages that were opened (with what a page sent as the member and what it shared to
+another chat), with the seconds and the spend of each step under the answer.
 
 Pure: the photos arrive as ready `data:` addresses so the file stands alone and loads no
 CDN. Called by the report writer.
@@ -61,8 +62,10 @@ def _rows_of(
         rows.append(
             f'<div class="system">{escape(step.sender_name or "")} pressed 「{label}」</div>'
         )
-    elif kind == "open_liff":
-        rows.append(_liff_row(step))
+    elif kind in ("open_liff", "liff_click"):
+        rows.append(_liff_row(step, shown))
+        rows.extend(_liff_sent_row(step, message) for message in step.liff_sent)
+        rows.extend(_liff_shared_row(step, share) for share in step.liff_shared)
     if step.error:
         rows.append(f'<div class="system problem">⚠ {escape(step.error)}</div>')
     for output in step.outputs:
@@ -91,14 +94,36 @@ def _member_row(step: StepRecord, shown: dict[str, Any], image_uris: Mapping[str
     )
 
 
-def _liff_row(step: StepRecord) -> str:
+def _liff_row(step: StepRecord, shown: dict[str, Any]) -> str:
     caption = f"{escape(step.sender_name or '')} opened the page"
+    if shown.get("type") == "liff_click":
+        caption = (
+            f"{escape(step.sender_name or '')} pressed <code>{escape(str(shown.get('selector')))}"
+            "</code> in the page"
+        )
     if step.note:
         caption += f" — {escape(step.note)}"
     image = f'<img src="{escape(step.screen, quote=True)}" alt="">' if step.screen else ""
     return (
         f'<div class="row"><div class="col"><div class="liff">{image}'
         f'<div class="cap">{caption}</div></div></div></div>'
+    )
+
+
+def _liff_sent_row(step: StepRecord, message: dict[str, Any]) -> str:
+    """The row of a message the page had `liff.sendMessages` send: the member's own message."""
+    return _member_row(step, {"type": "text", "text": message.get("text", "")}, {})
+
+
+def _liff_shared_row(step: StepRecord, share: dict[str, Any]) -> str:
+    """The row of what the page passed to `liff.shareTargetPicker`: the member's messages to
+    a chat of their choice, drawn as the receiver would see them."""
+    flex = FlexHtml({})
+    parts = [_message_html(message, flex, {}, {}) for message in share.get("messages", [])]
+    name = escape(step.sender_name or "")
+    return (
+        f'<div class="row"><div class="col"><span class="name">{name} → another chat '
+        f"(share target picker)</span>{''.join(parts)}</div></div>"
     )
 
 
@@ -168,11 +193,18 @@ def _meta_of(step: StepRecord) -> str:
     parts = [f"step {step.index}", f"{step.seconds:.1f}s"]
     if step.outputs and step.first_output_seconds is not None:
         parts.insert(1, f"first {step.first_output_seconds:.1f}s")
-    elif step.kind not in ("wait", "advance", "open_liff", "press"):
+    elif _expects_reply(step):
         parts.append("no reply")
     if step.spend.amount:
         parts.append(f"{step.spend.amount:g} {step.spend.currency} (${step.spend.usd:.4f})")
     return " · ".join(parts)
+
+
+def _expects_reply(step: StepRecord) -> bool:
+    """Whether the bot was addressed by this step, so that silence is worth saying."""
+    if step.kind == "liff_click":
+        return bool(step.liff_sent)
+    return step.kind not in ("wait", "advance", "open_liff", "press")
 
 
 def _quotes_of(transcript: ScenarioTranscript) -> dict[str, str]:

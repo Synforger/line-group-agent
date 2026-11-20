@@ -86,6 +86,17 @@ class OpenLiffStep:
 
 
 @dataclass(frozen=True)
+class LiffClickStep:
+    """A member opens the LIFF page a bot message links to and presses the element the CSS
+    selector `selector` names; what the page then sends or shares is recorded, and what it
+    sends is said in the chat as the member's own message."""
+
+    sender: str
+    target: ActionRef
+    selector: str
+
+
+@dataclass(frozen=True)
 class WaitStep:
     """Let `seconds` pass."""
 
@@ -100,7 +111,16 @@ class AdvanceStep:
     minutes: int
 
 
-Step = TextStep | ImageStep | LocationStep | PressStep | OpenLiffStep | WaitStep | AdvanceStep
+Step = (
+    TextStep
+    | ImageStep
+    | LocationStep
+    | PressStep
+    | OpenLiffStep
+    | LiffClickStep
+    | WaitStep
+    | AdvanceStep
+)
 
 
 @dataclass(frozen=True)

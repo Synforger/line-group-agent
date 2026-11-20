@@ -79,6 +79,26 @@
   .voters:empty { display: none; }
   .problem { color: var(--problem); font-size: 0.9375rem; margin: 0; }
   .problem:empty { display: none; }
+  .notify { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 0 4px; }
+  .notify input { width: 22px; height: 22px; flex: none; accent-color: var(--mine-edge); }
+  .notify[hidden], .share-area[hidden] { display: none; }
+  .hint { color: var(--muted); font-size: 0.75rem; margin: 0 0 16px; }
+  .share-area { margin: 0 0 16px; }
+  .share {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    font: inherit;
+    color: inherit;
+    background: var(--card);
+    border: 0;
+    border-radius: 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .share:focus-visible, .notify input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .share-area .hint { margin: 6px 2px 0; }
   @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
 </style>
 </head>
@@ -88,6 +108,15 @@
   <p id="note" class="note"></p>
   <ul id="options"></ul>
   <p id="summary" class="note"></p>
+  <label id="notify-field" class="notify" hidden>
+    <input id="notify" type="checkbox" checked>
+    <span>トークに知らせる</span>
+  </label>
+  <p id="notify-hint" class="hint" hidden>投票すると、「○○ に入れたよ」とあなたの発言でトークに送られます。</p>
+  <div id="share-area" class="share-area" hidden>
+    <button id="share" class="share" type="button">ほかのトークに送る</button>
+    <p class="hint">送った先でも、このグループのメンバー以外はこの投票を開けません。</p>
+  </div>
   <p id="problem" class="problem" role="status"></p>
 </main>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -107,14 +136,28 @@
     503: "いま LINE とつながりません。少し待ってからもう一度お願いします。"
   };
   var OTHER_PROBLEM = "うまくいきませんでした。もう一度お試しください。";
+  var SHARE_PROBLEM = "ほかのトークに送れませんでした。もう一度お試しください。";
+  var NOTIFY_KEY = "poll-notify-talk";
+  var TALK_TYPES = ["utou", "group", "room"];
+  var LIFF_URL = "https://liff.line.me/";
+  var ALT_TEXT_MAX = 400;
+  var BUTTON_LABEL = "投票を開く";
+  var ACCENT = "#06a84a";
 
   var question = document.getElementById("question");
   var note = document.getElementById("note");
   var options = document.getElementById("options");
   var summary = document.getElementById("summary");
   var problem = document.getElementById("problem");
+  var notifyField = document.getElementById("notify-field");
+  var notifyHint = document.getElementById("notify-hint");
+  var notify = document.getElementById("notify");
+  var shareArea = document.getElementById("share-area");
+  var shareButton = document.getElementById("share");
   var linkId = null;
+  var view = null;
   var isBusy = false;
+  var canTellTalk = false;
 
   function Failure(status) {
     this.status = status;
@@ -197,7 +240,8 @@
     return item;
   }
 
-  function render(view) {
+  function render(next) {
+    view = next;
     var focused = Array.prototype.indexOf.call(
       options.querySelectorAll("button"),
       document.activeElement
@@ -215,15 +259,106 @@
     if (focused >= 0) options.querySelectorAll("button")[focused].focus();
   }
 
+  function sentenceOf(option) {
+    return option.label + (view.kind === "date" ? " が行けるよ" : " に入れたよ");
+  }
+
+  async function sendMessagesAvailable() {
+    try {
+      if (!liff.isInClient()) return false;
+      if (TALK_TYPES.indexOf((liff.getContext() || {}).type) < 0) return false;
+      return (await liff.permission.query("chat_message.write")).state === "granted";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function readNotifyChoice() {
+    try {
+      return window.localStorage.getItem(NOTIFY_KEY) !== "off";
+    } catch (error) {
+      return true;
+    }
+  }
+
+  function keepNotifyChoice() {
+    try {
+      window.localStorage.setItem(NOTIFY_KEY, notify.checked ? "on" : "off");
+    } catch (error) {
+      // The choice is only not remembered.
+    }
+  }
+
+  async function tellTalk(text) {
+    try {
+      await liff.sendMessages([{ type: "text", text: text }]);
+    } catch (error) {
+      // Not available from where the page was opened: the vote stands, nothing is said.
+    }
+  }
+
   async function vote(index) {
     if (isBusy) return;
     isBusy = true;
     try {
-      render(await send(VOTE_PATH, { p: linkId, option: index }));
+      var wasMine = view.options[index].mine;
+      var next = await send(VOTE_PATH, { p: linkId, option: index });
+      render(next);
+      if (!wasMine && next.options[index].mine && canTellTalk && notify.checked) {
+        tellTalk(sentenceOf(next.options[index]));
+      }
     } catch (error) {
       showProblem(error.status);
     } finally {
       isBusy = false;
+    }
+  }
+
+  function shareMessage() {
+    var lines = view.options.map(function (option) {
+      return { type: "text", text: "・" + option.label, size: "sm", wrap: true };
+    });
+    var contents = [{ type: "text", text: view.question, weight: "bold", size: "lg", wrap: true }];
+    return {
+      type: "flex",
+      altText: ("投票: " + view.question).slice(0, ALT_TEXT_MAX),
+      contents: {
+        type: "bubble",
+        body: { type: "box", layout: "vertical", spacing: "sm", contents: contents.concat(lines) },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "button",
+              style: "primary",
+              color: ACCENT,
+              action: {
+                type: "uri",
+                label: BUTTON_LABEL,
+                uri: LIFF_URL + LIFF_ID + "?p=" + encodeURIComponent(linkId)
+              }
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  async function share() {
+    if (!view) return;
+    try {
+      await liff.shareTargetPicker([shareMessage()], { isMultiple: true });
+    } catch (error) {
+      problem.textContent = SHARE_PROBLEM;
+    }
+  }
+
+  function shareAvailable() {
+    try {
+      return liff.isApiAvailable("shareTargetPicker");
+    } catch (error) {
+      return false;
     }
   }
 
@@ -245,13 +380,23 @@
       showProblem(403);
       return;
     }
+    var tellable = sendMessagesAvailable();
     try {
       render(await send(POLL_PATH, { p: linkId }));
     } catch (error) {
       question.textContent = "投票を開けませんでした";
       showProblem(error.status);
+      return;
     }
+    shareArea.hidden = !shareAvailable();
+    canTellTalk = await tellable;
+    notify.checked = readNotifyChoice();
+    notifyField.hidden = !canTellTalk;
+    notifyHint.hidden = !canTellTalk;
   }
+
+  notify.addEventListener("change", keepNotifyChoice);
+  shareButton.addEventListener("click", share);
 
   start();
 })();
