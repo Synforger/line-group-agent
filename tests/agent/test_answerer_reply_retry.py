@@ -87,9 +87,9 @@ async def test_an_empty_reply_is_a_reply_and_is_not_asked_again(tmp_path: Path) 
     assert len(world.client.messages.requests) == 1
 
 
-async def test_an_answer_without_text_is_not_asked_again(tmp_path: Path) -> None:
+async def test_an_answer_without_text_is_not_asked_again_and_stays_silent(tmp_path: Path) -> None:
     world = build(tmp_path, [answer([]), text_answer("<reply>x</reply>")])
-    assert await world.answerer.answer(GROUP, message()) == Answer(DEFAULT_ERROR_TEXT)
+    assert await world.answerer.answer(GROUP, message()) == Answer(None)
     assert len(world.client.messages.requests) == 1
 
 
