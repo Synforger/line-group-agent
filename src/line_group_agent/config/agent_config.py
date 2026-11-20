@@ -97,6 +97,7 @@ class BudgetConfig:
     currency_per_usd: float
     estimated_input_tokens_per_request: int
     exhausted_text: str
+    shared_spend_files: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -317,7 +318,7 @@ def parse_config(raw: dict[str, Any], base_dir: Path) -> AgentConfig:
             DEFAULT_WEB_FETCH_MAX_CONTENT_TOKENS,
         ),
         prices=_prices(_required(raw, "prices_usd", dict)),
-        budget=_budget(_required(raw, "budget", dict)),
+        budget=_budget(_required(raw, "budget", dict), base_dir),
     )
 
 
@@ -383,7 +384,7 @@ def _prices(section: dict[str, Any]) -> PriceConfig:
     )
 
 
-def _budget(section: dict[str, Any]) -> BudgetConfig:
+def _budget(section: dict[str, Any], base_dir: Path) -> BudgetConfig:
     return BudgetConfig(
         monthly_limit=_required(section, "monthly_limit", float),
         currency=_optional(section, "currency", str, DEFAULT_CURRENCY),
@@ -392,6 +393,9 @@ def _budget(section: dict[str, Any]) -> BudgetConfig:
             section, "estimated_input_tokens_per_request", int, DEFAULT_ESTIMATED_INPUT_TOKENS
         ),
         exhausted_text=_optional(section, "exhausted_text", str, DEFAULT_EXHAUSTED_TEXT),
+        shared_spend_files=tuple(
+            base_dir / Path(name) for name in _string_tuple(section, "shared_spend_files", ())
+        ),
     )
 
 
