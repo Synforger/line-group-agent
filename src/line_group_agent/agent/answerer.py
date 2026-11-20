@@ -178,7 +178,8 @@ class Answerer:
                 conversation.add_user(_silence_results(content))
                 logger.info("answer: stayed silent for a message that only held the name")
                 return Answer(None)
-            texts.extend(b["text"] for b in content if b.get("type") == "text")
+            if text := _text_of(answer):
+                texts.append(text)
             # The answer's blocks go back to the API exactly as they came (thinking
             # signatures included).
             messages.append({"role": "assistant", "content": content})
@@ -355,8 +356,10 @@ class Answerer:
 
 
 def _text_of(answer: dict[str, Any]) -> str:
+    """Return the text of one answer. Its text blocks are pieces of one text (a cited answer
+    comes in many small ones, split mid-sentence), so they are joined with nothing between."""
     content = answer.get("content") or []
-    return "\n".join(b["text"] for b in content if b.get("type") == "text")
+    return "".join(b["text"] for b in content if b.get("type") == "text")
 
 
 def _forgot_reply_tags(answer: dict[str, Any]) -> bool:

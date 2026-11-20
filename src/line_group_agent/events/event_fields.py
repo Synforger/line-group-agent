@@ -99,18 +99,24 @@ def is_self_mentioned(event: dict[str, Any]) -> bool:
 _EDGE = " \t\u3000、。,.!！?？~〜ー…"
 
 
+# Where a sentence ends: after one of these, or at a line break, the next sentence begins.
+_SENTENCE_BREAK = re.compile(r"[。．！？!?\n]+")
+_SPACES = " \t\u3000"
+
+
 def is_called_by_name(
     event: dict[str, Any], names: tuple[str, ...], *, start_runs_on: bool = False
 ) -> bool:
-    """Return whether a text message starts or ends with one of `names` (any case).
+    """Return whether a text message starts a sentence with, or ends with, one of `names`
+    (any case).
 
-    A name only counts at the start or the end, so a message that merely talks about
-    the bot in the middle of a sentence is not taken as a call. At the start the name
-    must be followed by a space or punctuation ("ソラ、" calls, "ソラって便利" does
-    not), unless `start_runs_on` is set: then any text may follow it ("ソラ候補出して"
-    calls, as people writing without spaces do), except that a Latin name must not run
-    on into more letters or digits. At the end a Latin name must not be the tail of a
-    longer word.
+    A name only counts at the start of a sentence (the message's start, or after `。．！？!?`
+    or a line break, spaces skipped) or at the end, so a message that merely talks about the
+    bot in the middle of a sentence is not taken as a call. At a start the name must be
+    followed by a space or punctuation ("ソラ、" calls, "ソラって便利" does not), unless
+    `start_runs_on` is set: then any text may follow it ("ソラ候補出して" calls, as people
+    writing without spaces do), except that a Latin name must not run on into more letters or
+    digits. At the end a Latin name must not be the tail of a longer word.
     """
     message = event.get("message") or {}
     text = message.get("text")
@@ -119,10 +125,7 @@ def is_called_by_name(
     body = text.strip(_EDGE).casefold()
     for name in names:
         key = name.casefold()
-        after = body[len(key) : len(key) + 1]
-        if body.startswith(key) and (not after or after in _EDGE):
-            return True
-        if start_runs_on and body.startswith(key) and not (_runs_on(key[-1]) and _runs_on(after)):
+        if any(_starts_with_call(start, key, start_runs_on) for start in _sentence_starts(body)):
             return True
         if body.endswith(key) and not _runs_on(body[-len(key) - 1 : -len(key)]):
             return True
@@ -153,6 +156,25 @@ def strip_call_name(text: str, names: tuple[str, ...]) -> str:
         if body.casefold().endswith(name.casefold()):
             return body[: -len(name)].strip(_EDGE)
     return text
+
+
+def _sentence_starts(body: str) -> list[str]:
+    """Return `body` and the rest of it from the start of each later sentence."""
+    starts = [body]
+    for match in _SENTENCE_BREAK.finditer(body):
+        rest = body[match.end() :].lstrip(_SPACES)
+        if rest:
+            starts.append(rest)
+    return starts
+
+
+def _starts_with_call(start: str, key: str, start_runs_on: bool) -> bool:
+    if not start.startswith(key):
+        return False
+    after = start[len(key) : len(key) + 1]
+    if not after or after in _EDGE:
+        return True
+    return start_runs_on and not (_runs_on(key[-1]) and _runs_on(after))
 
 
 def _runs_on(neighbour: str) -> bool:

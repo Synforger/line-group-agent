@@ -77,6 +77,46 @@ def test_create_poll_makes_nothing_when_the_reply_has_no_room_left(tmp_path: Pat
     assert book.get(GROUP, "p4") is None
 
 
+def test_a_poll_made_and_closed_in_the_same_reply_sends_no_card(tmp_path: Path) -> None:
+    tools, book = tools_for(tmp_path)
+    output = TurnOutput()
+    run(tools["create_poll"], {"question": "test", "options": ["a", "b"]}, output)
+    run(tools["create_poll"], {"question": "Where?", "options": ["Kyoto", "Osaka"]}, output)
+    outcome, _ = run(tools["close_poll"], {"poll_id": "p1"}, output)
+    assert not outcome.is_error and "not sent" in outcome.content
+    [extra] = output.extras
+    assert extra.record_line.startswith("[投票] p2 Where?")
+    poll = book.get(GROUP, "p1")
+    assert poll is not None and poll.is_closed
+
+
+def test_closing_a_poll_of_an_earlier_reply_leaves_this_replys_cards(tmp_path: Path) -> None:
+    tools, book = tools_for(tmp_path)
+    run(tools["create_poll"], {"question": "Old", "options": ["a", "b"]})
+    output = TurnOutput()
+    run(tools["create_poll"], {"question": "New", "options": ["c", "d"]}, output)
+    outcome, _ = run(tools["close_poll"], {"poll_id": "p1"}, output)
+    assert not outcome.is_error and "not sent" not in outcome.content
+    [extra] = output.extras
+    assert extra.record_line.startswith("[投票] p2 New")
+
+
+def test_a_date_poll_made_and_closed_in_the_same_reply_sends_no_card(tmp_path: Path) -> None:
+    tools, _ = tools_for(tmp_path)
+    output = TurnOutput()
+    run(tools["create_date_poll"], {"title": "Day", "dates": ["11/23", "11/24"]}, output)
+    run(tools["close_poll"], {}, output)
+    assert output.extras == []
+
+
+@pytest.mark.parametrize("name", ["create_poll", "create_date_poll"])
+def test_the_tools_that_make_a_poll_say_not_to_make_one_to_test_the_tools(
+    tmp_path: Path, name: str
+) -> None:
+    tools, _ = tools_for(tmp_path)
+    assert "Do not make a poll to test the tools." in tools[name].definition["description"]
+
+
 def test_create_date_poll_makes_a_multiple_date_poll_with_its_card(tmp_path: Path) -> None:
     tools, book = tools_for(tmp_path)
     outcome, output = run(

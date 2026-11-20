@@ -13,9 +13,9 @@ A mention that holds only the itinerary keyword gets the saved trip itinerary as
 as text without a page), without the model.
 
 With `call_name_anywhere`, a text message that holds a call name anywhere else (neither a
-mention nor a name at its start or end) is also read by the model, which may stay silent
-when the message is not addressed to the bot. For such a message the keyword shortcuts are
-not used, and a person over the hourly limit is skipped without being told.
+mention nor a name at the start of a sentence or the end) is also read by the model, which
+may stay silent when the message is not addressed to the bot. For such a message the keyword
+shortcuts are not used, and a person over the hourly limit is skipped without being told.
 
 Other things a member does are recorded or counted without an answer: a photo is kept (made
 small enough for the model) and recorded as a `[写真]` line, a location as a `[位置]` line,
