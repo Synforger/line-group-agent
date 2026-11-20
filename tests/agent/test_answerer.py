@@ -123,6 +123,34 @@ async def test_history_search_runs_and_its_result_goes_back(tmp_path: Path) -> N
     assert rows(conversation_log)[2]["message"]["content"][0]["type"] == "tool_result"
 
 
+async def test_the_text_blocks_of_one_answer_join_without_a_break(tmp_path: Path) -> None:
+    pieces = ["<reply>Arashiyama is ", "best", " in autumn.", "</reply>"]
+    cited = answer([{"type": "text", "text": piece} for piece in pieces])
+    answerer, *_ = build(tmp_path, [cited])
+    assert (await answerer.answer(GROUP, mention())).text == "Arashiyama is best in autumn."
+
+
+async def test_the_text_of_separate_answers_of_a_turn_keeps_a_line_break_between(
+    tmp_path: Path,
+) -> None:
+    tool_call = answer(
+        [
+            {"type": "text", "text": "<reply>Line one."},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "search_history",
+                "input": {"query": "x"},
+            },
+        ],
+        message_id="msg_1",
+        stop_reason="tool_use",
+    )
+    final = text_answer("Line two.</reply>", message_id="msg_2")
+    answerer, *_ = build(tmp_path, [tool_call, final])
+    assert (await answerer.answer(GROUP, mention())).text == "Line one.\nLine two."
+
+
 async def test_an_unknown_tool_gets_an_error_result(tmp_path: Path) -> None:
     tool_call = answer(
         [{"type": "tool_use", "id": "toolu_1", "name": "book_hotel", "input": {}}],
