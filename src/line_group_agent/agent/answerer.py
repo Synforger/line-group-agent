@@ -32,6 +32,7 @@ from line_group_agent.agent.prompt import (
     STAY_SILENT_RESULT,
     STAY_SILENT_SKIPPED_RESULT,
     STAY_SILENT_TOOL_NAME,
+    STAY_SILENT_WITH_ACTIONS_RESULT,
     build_envelope,
     build_user_content,
     extract_reply,
@@ -173,7 +174,7 @@ class Answerer:
             if request_index == 0 and on_slow is not None and is_slow_ahead(answer):
                 await on_slow()
             content = answer.get("content") or []
-            if is_name_only and _calls_stay_silent(content):
+            if is_name_only and _calls_only_stay_silent(content):
                 # The turn is kept whole (its call has a result) and nothing is sent.
                 conversation.add_user(_silence_results(content))
                 logger.info("answer: stayed silent for a message that only held the name")
@@ -309,7 +310,12 @@ class Answerer:
             if block.get("type") != "tool_use":
                 continue
             if block.get("name") == STAY_SILENT_TOOL_NAME:
-                results.append(_tool_result(block, STAY_SILENT_REFUSED_RESULT, is_error=True))
+                refusal = (
+                    STAY_SILENT_WITH_ACTIONS_RESULT
+                    if _calls_other_tools(content)
+                    else STAY_SILENT_REFUSED_RESULT
+                )
+                results.append(_tool_result(block, refusal, is_error=True))
                 continue
             if block.get("name") == SHOW_CARDS_TOOL_NAME:
                 cards = parse_cards(block.get("input"))
@@ -388,9 +394,16 @@ def _wrote_nothing(texts: list[str], answer: dict[str, Any]) -> bool:
     )
 
 
-def _calls_stay_silent(content: list[dict[str, Any]]) -> bool:
+def _calls_only_stay_silent(content: list[dict[str, Any]]) -> bool:
+    """Whether the turn calls `stay_silent` and no other tool of its own. A turn that also
+    asks for something (cards, a poll) is doing that instead of staying silent."""
+    names = [block.get("name") for block in content if block.get("type") == "tool_use"]
+    return STAY_SILENT_TOOL_NAME in names and not _calls_other_tools(content)
+
+
+def _calls_other_tools(content: list[dict[str, Any]]) -> bool:
     return any(
-        block.get("type") == "tool_use" and block.get("name") == STAY_SILENT_TOOL_NAME
+        block.get("type") == "tool_use" and block.get("name") != STAY_SILENT_TOOL_NAME
         for block in content
     )
 

@@ -30,12 +30,12 @@ stop the group.
 ## A name in the middle of a message
 
 With `call_name_anywhere` on, a message that holds a call name anywhere (not a LINE mention,
-and not at the start of a sentence or the end, which still call the bot as before) is added as a turn too. The
+and not at the start of a sentence or the end, which still call the bot as before) is added as a turn too. A name at the start that runs on into the words ("ソラって便利") is read the same way. The
 turn tells the model that the message may not be addressed to it, and gives it the tool
 `stay_silent`. When the model calls it, nothing is sent to the group and the bot's reply is
 not recorded, but the turn stays in the conversation: the bot remembers it read the message,
 and the next turn carries only what was said after it. A message that mentions the bot or
-has a name at either end is always answered; `stay_silent` is refused there. The tool is
+has a name at either end is always answered; `stay_silent` is refused there. A turn that calls `stay_silent` together with other tools runs the other tools and answers. The tool is
 sent with every request while the setting is on, so the start of the request, and with it the
 prompt cache, does not change from one turn to the next.
 

@@ -12,7 +12,7 @@ from line_group_agent.agent.prompt import (
     NAME_ONLY_NOTE,
     STAY_SILENT_REFUSED_RESULT,
     STAY_SILENT_RESULT,
-    STAY_SILENT_SKIPPED_RESULT,
+    STAY_SILENT_WITH_ACTIONS_RESULT,
 )
 from line_group_agent.config.agent_config import DEFAULT_ERROR_TEXT
 from line_group_agent.records.group_log import GroupMessage
@@ -84,18 +84,22 @@ async def test_a_silent_turn_stays_in_the_conversation_with_its_result(tmp_path:
     assert conversation.last_turn_message_id == "7"
 
 
-async def test_other_calls_of_a_silent_turn_are_not_run(tmp_path: Path) -> None:
+async def test_stay_silent_with_other_calls_runs_them_and_answers(tmp_path: Path) -> None:
     search = {
         "type": "tool_use",
         "id": "toolu_2",
         "name": "search_history",
         "input": {"query": "x"},
     }
-    world = build(tmp_path, [silent_call(search)])
-    await world.answerer.answer(GROUP, message(), is_name_only=True)
+    world = build(
+        tmp_path, [silent_call(search), text_answer("<reply>Found it.</reply>", message_id="m2")]
+    )
+    result = await world.answerer.answer(GROUP, message(), is_name_only=True)
+    assert result.text == "Found it."
     results = world.conversations.get(GROUP).messages[2]["content"]
-    assert [r["content"] for r in results] == [STAY_SILENT_RESULT, STAY_SILENT_SKIPPED_RESULT]
-    assert results[1]["is_error"] is True
+    assert results[0]["content"] == STAY_SILENT_WITH_ACTIONS_RESULT
+    assert results[0]["is_error"] is True
+    assert results[1].get("is_error") is not True
 
 
 async def test_text_written_with_stay_silent_is_not_sent(tmp_path: Path) -> None:

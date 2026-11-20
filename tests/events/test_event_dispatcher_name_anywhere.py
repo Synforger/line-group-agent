@@ -131,3 +131,16 @@ async def test_a_silent_turn_sends_nothing_records_no_reply_and_moves_the_turn_o
     assert [m["role"] for m in second] == ["user", "assistant", "user", "user"]
     assert MIDDLE not in json.dumps(second[3], ensure_ascii=False)
     assert MIDDLE in json.dumps(second[0], ensure_ascii=False)
+
+
+async def test_a_name_that_runs_on_is_read_like_a_name_in_the_text(tmp_path: Path) -> None:
+    dispatcher, _, answerer = build(tmp_path, call_name_start_runs_on=True)
+    await dispatcher.handle(text_event(text="ソラって便利だよね"))
+    await dispatcher.handle(text_event(text="ソラ、明日どこ?", message_id="m2"))
+    assert answerer.name_only_flags == [True, False]
+
+
+async def test_without_the_setting_a_name_that_runs_on_is_a_call(tmp_path: Path) -> None:
+    dispatcher, _, answerer = build(tmp_path, is_anywhere=False, call_name_start_runs_on=True)
+    await dispatcher.handle(text_event(text="ソラ候補出して"))
+    assert answerer.name_only_flags == [False]
