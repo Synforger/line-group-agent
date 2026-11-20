@@ -213,7 +213,7 @@ class Answerer:
                 is_api_down=is_api_down,
                 is_over_budget=is_over_budget,
                 is_name_only=is_name_only,
-                wrote_nothing=not texts and last_answer.get("stop_reason") == "end_turn",
+                wrote_nothing=_wrote_nothing(texts, last_answer),
             )
         if cards and self.card_images is not None:
             cards = await self.card_images.fill(cards)
@@ -375,6 +375,17 @@ def _forgot_reply_tags(answer: dict[str, Any]) -> bool:
         return False
     text = _text_of(answer)
     return bool(text.strip()) and REPLY_PATTERN.search(text) is None
+
+
+def _wrote_nothing(texts: list[str], answer: dict[str, Any]) -> bool:
+    """Whether the turn ended with nothing to say: no text at all, or only an empty
+    `<reply></reply>`."""
+    if answer.get("stop_reason") != "end_turn":
+        return False
+    text = "\n".join(texts)
+    return not text.strip() or (
+        REPLY_PATTERN.search(text) is not None and extract_reply(text) is None
+    )
 
 
 def _calls_stay_silent(content: list[dict[str, Any]]) -> bool:
