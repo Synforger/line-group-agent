@@ -15,6 +15,9 @@ from fastapi import FastAPI
 LOOPBACK_HOST = "127.0.0.1"
 START_TIMEOUT_SECONDS = 30.0
 START_POLL_SECONDS = 0.02
+# Longer than the 5 s for which the bot's HTTP client keeps an idle connection: with equal
+# times, the client could reuse a connection the server was closing and lose a request.
+KEEP_ALIVE_SECONDS = 60
 
 
 class ServerStartError(RuntimeError):
@@ -25,7 +28,13 @@ class LocalServer:
     """One web app served on `127.0.0.1` at a port the system picked."""
 
     def __init__(self, app: FastAPI) -> None:
-        config = uvicorn.Config(app, host=LOOPBACK_HOST, port=0, log_config=None)
+        config = uvicorn.Config(
+            app,
+            host=LOOPBACK_HOST,
+            port=0,
+            log_config=None,
+            timeout_keep_alive=KEEP_ALIVE_SECONDS,
+        )
         self._server = uvicorn.Server(config)
         self._task: asyncio.Task[None] | None = None
 
