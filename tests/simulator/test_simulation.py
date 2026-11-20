@@ -1,11 +1,17 @@
+import asyncio
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
+from fastapi import FastAPI
 
 from line_group_agent._common.headless_browser import BrowserUnavailableError, HeadlessBrowser
+from line_group_agent.config.agent_config import AgentConfig
+from line_group_agent.itinerary.itinerary_renderer import ItineraryRenderer, RenderedItinerary
 from line_group_agent.reminders.reminder import GROUP_TIME_ZONE
+from line_group_agent.service.service_builder import build_app
 from line_group_agent.simulator.scenario import (
     ActionRef,
     AdvanceStep,
@@ -17,7 +23,9 @@ from line_group_agent.simulator.scenario import (
     TextStep,
     WaitStep,
 )
+from line_group_agent.simulator.scenario_clock import ScenarioClock
 from line_group_agent.simulator.simulation import SimulationOptions, run_simulation
+from line_group_agent.simulator.webhook_events import sign_body, webhook_body
 from tests.fakes import answer, text_answer
 from tests.simulator.harness import (
     AKI,
@@ -404,3 +412,62 @@ async def test_the_itinerary_image_is_drawn_kept_addressed_to_the_bot_and_shown_
     assert 'class="photo plan" src="data:image/png;base64,' in chat
     log = (config.state_dir / "scenarios/trip/groups" / GROUP_ID / "messages.jsonl").read_text()
     assert "[予定表の画像]" in log
+
+
+async def test_while_an_image_is_being_drawn_the_bot_still_takes_other_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    drawing = asyncio.Event()
+    release = asyncio.Event()
+    served_while_drawing: list[int] = []
+
+    async def slow_render(_self: ItineraryRenderer, _view: dict[str, object]) -> RenderedItinerary:
+        drawing.set()
+        await release.wait()
+        return RenderedItinerary([b"\x89PNG\r\n\x1a\nfake"], 0)
+
+    monkeypatch.setattr(ItineraryRenderer, "render", slow_render)
+    use_scripted_model(
+        monkeypatch,
+        [
+            answer([ADD_CALL], stop_reason="tool_use"),
+            answer([IMAGE_CALL], message_id="msg_2", stop_reason="tool_use"),
+            text_answer("<reply>Here is the plan.</reply>", message_id="msg_3"),
+        ],
+    )
+    apps: list[FastAPI] = []
+
+    def build_and_keep(config: AgentConfig, clock: ScenarioClock) -> FastAPI:
+        apps.append(build_app(config, clock))
+        return apps[0]
+
+    async def other_requests() -> None:
+        await drawing.wait()
+        body = webhook_body([], "Ubot")
+        headers = {
+            "x-line-signature": sign_body(body, "secret"),
+            "content-type": "application/json",
+        }
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=apps[0]), base_url="http://bot"
+        ) as client:
+            webhook = await asyncio.wait_for(
+                client.post("/line/webhook", content=body, headers=headers), timeout=5
+            )
+            page = await asyncio.wait_for(client.get("/liff/"), timeout=5)
+        served_while_drawing.extend([webhook.status_code, page.status_code])
+        release.set()
+
+    config = bot_config(tmp_path, liff_id=LIFF_ID, login_channel_id=LOGIN_CHANNEL_ID)
+    other = asyncio.create_task(other_requests())
+    [transcript] = await run_simulation(
+        config,
+        [scenario_of(TextStep(AKI.user_id, "plan it as an image", mention=True))],
+        tmp_path / "out",
+        NO_SCREENS,
+        build_bot=build_and_keep,
+    )
+    await other
+    assert served_while_drawing == [200, 200]
+    assert transcript.steps[0].error is None
+    assert any(m["type"] == "image" for o in transcript.steps[0].outputs for m in o.messages)

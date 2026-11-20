@@ -2,10 +2,11 @@
 one item at a time by its id, set the trip's name and first day, and put back an earlier state.
 
 Members see the itinerary as a card (the next three items and a button to the LIFF page) when
-the model reads it with `show_card`, or as images of the plan with `show_image` (the card
-replaces the images when they cannot be drawn); a mention with only the itinerary keyword still
-gets the text back without the model (the event dispatcher does that). Called by the service
-builder, which adds the tools to the client tools.
+the model reads it with `show_card`, or as images of the plan with `show_image` (drawing
+waits, so `get_itinerary` is async; the card replaces the images when they cannot be drawn).
+A mention with only the itinerary keyword still gets the text back without the model (the
+event dispatcher does that). Called by the service builder, which adds the tools to the client
+tools.
 """
 
 from __future__ import annotations
@@ -91,7 +92,7 @@ def itinerary_tools(
     itinerary as a card that opens the page of that LIFF app; with `images` it may send it as
     images of the plan."""
 
-    def get(tool_input: object, turn: ToolTurn) -> ToolOutcome:
+    async def get(tool_input: object, turn: ToolTurn) -> ToolOutcome:
         itinerary = book.get(turn.group_id)
         if itinerary is None:
             return ToolOutcome(NO_ITINERARY_RESULT)
@@ -99,7 +100,7 @@ def itinerary_tools(
         text = _model_text_of(itinerary, book.versions(turn.group_id))
         wants_card = fields.get("show_card") is True
         if fields.get("show_image") is True:
-            note, is_sent = _send_images(images, turn, itinerary)
+            note, is_sent = await _send_images(images, turn, itinerary)
             text += "\n" + note
             wants_card = wants_card or not is_sent
         if wants_card:
@@ -240,7 +241,7 @@ def _send_card(
     return "The itinerary card is sent after your reply; members open the whole plan from it."
 
 
-def _send_images(
+async def _send_images(
     images: ItineraryImages | None, turn: ToolTurn, itinerary: Itinerary
 ) -> tuple[str, bool]:
     """Add the images of the itinerary to the reply; return what to tell the model and
@@ -251,7 +252,7 @@ def _send_images(
         return EMPTY_IMAGE_NOTE, False
     if not turn.output.has_room():
         return NO_IMAGE_ROOM_NOTE, False
-    made = images.create_blocking(turn.group_id, itinerary)
+    made = await images.create(turn.group_id, itinerary)
     if made is None:
         return IMAGE_FAILED_NOTE, False
     sent = 0

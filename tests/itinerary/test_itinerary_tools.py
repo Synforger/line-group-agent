@@ -1,4 +1,7 @@
+import asyncio
+import inspect
 import re
+from collections.abc import Awaitable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -27,7 +30,10 @@ class Setup:
 
     def run(self, name: str, tool_input: object) -> ToolOutcome:
         tool: ClientTool = self.tools[name]
-        return tool.run(tool_input, ToolTurn(GROUP, MENTION, self.output))
+        outcome = tool.run(tool_input, ToolTurn(GROUP, MENTION, self.output))
+        if inspect.isawaitable(outcome):
+            return asyncio.run(_awaited(outcome))
+        return outcome
 
     def add(self, day: int, title: str, **fields: object) -> str:
         outcome = self.run("add_itinerary_item", {"day": day, "title": title, **fields})
@@ -35,6 +41,10 @@ class Setup:
         found = re.search(r"\[([0-9a-f]+)\]", outcome.content)
         assert found is not None
         return found.group(1)
+
+
+async def _awaited(outcome: Awaitable[ToolOutcome]) -> ToolOutcome:
+    return await outcome
 
 
 def test_the_old_replace_the_whole_text_tool_is_gone(tmp_path: Path) -> None:

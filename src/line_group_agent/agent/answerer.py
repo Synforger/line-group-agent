@@ -201,7 +201,7 @@ class Answerer:
             if request_index == self.config.max_tool_rounds:
                 logger.info("answer: tool rounds used up (%d)", self.config.max_tool_rounds)
                 break
-            results, shown = self._run_tools(conversation, mention, content, output)
+            results, shown = await self._run_tools(conversation, mention, content, output)
             if shown is not None:
                 cards = shown
             messages.append({"role": "user", "content": results})
@@ -302,7 +302,7 @@ class Answerer:
             conversation.group_id, to_currency(estimate, self.config.budget)
         )
 
-    def _run_tools(
+    async def _run_tools(
         self,
         conversation: GroupConversation,
         mention: GroupMessage,
@@ -336,17 +336,17 @@ class Answerer:
             name = block.get("name")
             if self.client_tools.has(name):
                 turn = ToolTurn(conversation.group_id, mention, output)
-                outcome = self._run_client_tool(str(name), block.get("input"), turn)
+                outcome = await self._run_client_tool(str(name), block.get("input"), turn)
                 results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
                 continue
             results.append(self._run_query_tool(conversation, mention, block))
         return results, shown
 
-    def _run_client_tool(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
+    async def _run_client_tool(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
         """Run a group tool; a tool that fails (a file that cannot be written) gives the model
         an error result instead of ending the whole answer."""
         try:
-            return self.client_tools.run(name, tool_input, turn)
+            return await self.client_tools.run(name, tool_input, turn)
         except Exception as error:
             logger.error("answer: tool %s failed (%s)", name, type(error).__name__)
             return ToolOutcome(TOOL_FAILED_RESULT, is_error=True)

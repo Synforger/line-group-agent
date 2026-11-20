@@ -42,6 +42,7 @@
   "max_images_per_turn": 3,
   "max_image_edge_pixels": 1568,
   "card_image_lookup": true,
+  "public_base_url": "https://bot.example.com",
   "liff_id": "1234567890-AbCdEfGh",
   "login_channel_id": "1234567890",
   "liff_max_requests_per_user_per_minute": 60,

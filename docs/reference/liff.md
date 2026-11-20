@@ -119,8 +119,9 @@ the machine, 750 pixels wide. Nothing is fetched from outside while it draws.
 - It needs Chromium: `uv run playwright install chromium`, and on Linux a Japanese font (for
   example Noto Sans CJK JP) so the text is not drawn as boxes. When Chromium cannot start, the
   agent logs it, sends no image and sends the card instead
-- Drawing takes a few seconds and blocks the agent while it runs, so a mention that asks for an
-  image is slower than one that asks for the card
+- Drawing takes a few seconds, so a mention that asks for an image is answered later than one
+  that asks for the card; the agent keeps taking other requests meanwhile, and draws one image
+  set at a time
 - It works only with the settings below, and `public_base_url` must be an `https` address that
   reaches `/liff/media/` (the same proxy or tunnel as step 3 of [Setting it up](#setting-it-up))
 
