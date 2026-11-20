@@ -90,3 +90,4 @@ All in US dollars. Required unless marked optional.
 | `currency_per_usd` | required | How much one dollar is in `currency` (`1` for `USD`) |
 | `estimated_input_tokens_per_request` | `20000` | Prompt size assumed when estimating one request |
 | `exhausted_text` | `This month's budget is used up.` | Sent instead of an answer when the budget cannot cover one more |
+| `shared_spend_files` | `[]` | Spend files of other programs that use the same API key, relative to this file's folder. Their `spent` for this month is added to this agent's own when checking the overall limit (a missing file or another month counts as 0; a file that cannot be read, lacks `month`, `spent` or `currency`, or is in another currency makes the check say no). This agent's own `spend.json` still holds only its own spend, so the other program can add it to theirs without counting it twice |

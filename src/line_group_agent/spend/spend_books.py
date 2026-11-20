@@ -3,7 +3,8 @@
 Called by the model caller (to check and add a cost), the tab list (to show a group's
 figure) and the settings reader's users. The overall limit comes from the settings
 file when it gives one, else from the configuration; each group may spend the overall
-limit divided by the number of groups.
+limit divided by the number of groups. The overall month also counts what the other
+programs sharing the API key spent (their files are listed in the configuration).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 
 from line_group_agent.config.agent_config import BudgetConfig
 from line_group_agent.config.settings_store import SettingsStore
+from line_group_agent.spend.shared_spend_reader import SharedSpendReader
 from line_group_agent.spend.spend_ledger import SpendLedger
 
 LIMIT_DECIMALS = 4
@@ -29,18 +31,25 @@ class SpendBooks:
         budget: BudgetConfig,
         settings: SettingsStore,
         group_count: Callable[[], int],
+        *,
+        shared_spend: SharedSpendReader | None = None,
     ) -> None:
         self.overall = overall
         self.state_dir = state_dir
         self.budget = budget
         self.settings = settings
         self.group_count = group_count
+        self.shared_spend = shared_spend or SharedSpendReader(budget)
         self._groups: dict[str, SpendLedger] = {}
 
     def can_afford(self, group_id: str, cost: float) -> bool:
-        """Return whether both the overall month and the group's month can take `cost`."""
+        """Return whether both the overall month (with the other programs' share) and the group's
+        month can take `cost`. A shared file that cannot be used makes the answer no."""
         self._sync_limits()
-        return self.overall.can_afford(cost) and self._group(group_id).can_afford(cost)
+        others = self.shared_spend.total()
+        if others is None:
+            return False
+        return self.overall.can_afford(cost + others) and self._group(group_id).can_afford(cost)
 
     def add(self, group_id: str, cost: float) -> None:
         """Count `cost` against the overall month and the group's month."""

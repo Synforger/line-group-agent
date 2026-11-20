@@ -36,6 +36,7 @@ def test_defaults_match_the_agreed_receiving_point(tmp_path: Path) -> None:
     assert config.web_search is not None and config.web_search.max_uses == 3
     assert config.budget.currency == "JPY"
     assert config.budget.exhausted_text == "This month's budget is used up."
+    assert config.budget.shared_spend_files == ()
     assert config.allowed_group_ids == frozenset({"Callowed"})
 
 
@@ -367,3 +368,22 @@ def test_the_limits_must_be_positive(tmp_path: Path, key: str) -> None:
 def test_the_example_configuration_names_the_voting_page_with_made_up_values() -> None:
     raw = json.loads((Path(__file__).parents[2] / "configs" / "config.example.json").read_text())
     assert raw["liff_id"] == "1234567890-AbCdEfGh" and raw["login_channel_id"] == "1234567890"
+
+
+def test_shared_spend_files_are_read_from_the_configuration_folder(tmp_path: Path) -> None:
+    budget = {
+        "monthly_limit": 1000,
+        "currency_per_usd": 150,
+        "shared_spend_files": ["other/spend.json", str(tmp_path / "absolute.json")],
+    }
+    config = make_config(tmp_path, budget=budget)
+    assert config.budget.shared_spend_files == (
+        tmp_path / "other" / "spend.json",
+        tmp_path / "absolute.json",
+    )
+
+
+def test_shared_spend_files_must_be_a_list_of_names(tmp_path: Path) -> None:
+    budget = {"monthly_limit": 1000, "currency_per_usd": 150, "shared_spend_files": [1]}
+    with pytest.raises(ConfigError):
+        make_config(tmp_path, budget=budget)
