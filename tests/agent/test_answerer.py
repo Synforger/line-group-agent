@@ -52,6 +52,12 @@ async def test_an_answer_that_writes_nothing_stays_silent(tmp_path: Path) -> Non
     assert len(client.messages.requests) == 1
 
 
+async def test_an_empty_reply_mark_stays_silent(tmp_path: Path) -> None:
+    answerer, client, *_ = build(tmp_path, [text_answer("<reply></reply>")])
+    assert await answerer.answer(GROUP, mention(text="@bot is handy")) == Answer(None)
+    assert len(client.messages.requests) == 1
+
+
 async def test_the_request_carries_the_configured_model_tools_and_effort(tmp_path: Path) -> None:
     answerer, client, *_ = build(tmp_path, [text_answer("<reply>ok</reply>")])
     await answerer.answer(GROUP, mention())
