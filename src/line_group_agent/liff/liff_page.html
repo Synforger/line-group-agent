@@ -112,7 +112,7 @@
     <input id="notify" type="checkbox" checked>
     <span>トークに知らせる</span>
   </label>
-  <p id="notify-hint" class="hint" hidden>投票すると、「○○ に入れたよ」とあなたの発言でトークに送られます。</p>
+  <p id="notify-hint" class="hint" hidden>投票すると、「○○に入れたよ」とあなたの発言でトークに送られます。</p>
   <div id="share-area" class="share-area" hidden>
     <button id="share" class="share" type="button">ほかのトークに送る</button>
     <p class="hint">送った先でも、このグループのメンバー以外はこの投票を開けません。</p>
@@ -260,7 +260,7 @@
   }
 
   function sentenceOf(option) {
-    return option.label + (view.kind === "date" ? " が行けるよ" : " に入れたよ");
+    return option.label + (view.kind === "date" ? "が行けるよ" : "に入れたよ");
   }
 
   async function sendMessagesAvailable() {

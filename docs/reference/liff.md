@@ -34,7 +34,7 @@ poll, and the bot's `poll_results` reads both.
 ### Telling the talk
 
 After a vote has been recorded the page can say so in the talk, **as the voter's own message**
-(LIFF's `liff.sendMessages`): `<option> に入れたよ`, or `<day> が行けるよ` for a date poll. It
+(LIFF's `liff.sendMessages`): `<option>に入れたよ`, or `<day>が行けるよ` for a date poll. It
 sends only when the press picked an option that was not the voter's before; taking a pick back,
 or pressing the option already picked, sends nothing.
 

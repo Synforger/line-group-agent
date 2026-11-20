@@ -29,14 +29,14 @@ async def test_a_vote_tells_the_talk_in_the_voters_own_words(
     seen = await visit(
         screens, poll_app(["Kyoto", "Osaka"]), POLL_ADDRESS, tmp_path, click=[SECOND]
     )
-    assert seen.sent == [text_of("Osaka に入れたよ")]
+    assert seen.sent == [text_of("Osakaに入れたよ")]
     assert seen.note is None
 
 
 async def test_a_date_pick_says_the_day_is_fine(screens: ScreenCapture, tmp_path: Path) -> None:
     app = poll_app(["11/23(月)", "11/24(火)"], kind="date", multiple=True)
     seen = await visit(screens, app, POLL_ADDRESS, tmp_path, click=[SECOND])
-    assert seen.sent == [text_of("11/24(火) が行けるよ")]
+    assert seen.sent == [text_of("11/24(火)が行けるよ")]
 
 
 async def test_pressing_the_option_already_picked_says_nothing_more(
@@ -45,20 +45,20 @@ async def test_pressing_the_option_already_picked_says_nothing_more(
     seen = await visit(
         screens, poll_app(["Kyoto", "Osaka"]), POLL_ADDRESS, tmp_path, click=[FIRST, FIRST]
     )
-    assert seen.sent == [text_of("Kyoto に入れたよ")]
+    assert seen.sent == [text_of("Kyotoに入れたよ")]
 
 
 async def test_taking_a_date_back_says_nothing(screens: ScreenCapture, tmp_path: Path) -> None:
     app = poll_app(["11/23(月)", "11/24(火)"], kind="date", multiple=True)
     seen = await visit(screens, app, POLL_ADDRESS, tmp_path, click=[FIRST, FIRST])
-    assert seen.sent == [text_of("11/23(月) が行けるよ")]
+    assert seen.sent == [text_of("11/23(月)が行けるよ")]
 
 
 async def test_moving_a_vote_tells_the_new_choice(screens: ScreenCapture, tmp_path: Path) -> None:
     seen = await visit(
         screens, poll_app(["Kyoto", "Osaka"]), POLL_ADDRESS, tmp_path, click=[FIRST, SECOND]
     )
-    assert seen.sent == [text_of("Kyoto に入れたよ"), text_of("Osaka に入れたよ")]
+    assert seen.sent == [text_of("Kyotoに入れたよ"), text_of("Osakaに入れたよ")]
 
 
 async def test_with_the_check_off_the_vote_is_kept_and_the_talk_is_not_told(
