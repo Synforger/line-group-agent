@@ -206,6 +206,13 @@
   .sheet .label { display: block; color: var(--muted); font-size: 0.75rem; }
   .sheet .note { white-space: pre-wrap; }
   .sheet a { color: var(--focus); }
+  body.for-image { padding-bottom: 16px; }
+  .for-image main { max-width: none; }
+  .for-image .reload, .for-image details, .for-image nav, .for-image .now, .for-image #day,
+  .for-image .share-area { display: none; }
+  .for-image .day-block { padding: 12px 0; }
+  .for-image .day-block + .day-block { border-top: 1px solid var(--grid-strong); }
+  .for-image .day-block > h2 { font-size: 1rem; color: var(--text); margin: 0 0 8px; }
   .close { min-height: 44px; width: 100%; background: var(--card); border: 0; border-radius: 12px; cursor: pointer; }
 </style>
 </head>
@@ -645,6 +652,29 @@
     }
   }
 
+  function drawForImage(next) {
+    render(next);
+    var host = document.getElementById("day").parentNode;
+    return view.days.map(function (day) {
+      renderDay(day);
+      var copy = document.getElementById("day").cloneNode(true);
+      copy.removeAttribute("id");
+      Array.prototype.forEach.call(copy.querySelectorAll("[id]"), function (node) {
+        node.removeAttribute("id");
+      });
+      var heading = document.createElement("h2");
+      heading.textContent = day.label;
+      var block = document.createElement("section");
+      block.className = "day-block";
+      block.append(heading, copy);
+      host.append(block);
+      return block;
+    }).map(function (block) {
+      var box = block.getBoundingClientRect();
+      return { top: box.top + window.scrollY, bottom: box.bottom + window.scrollY };
+    });
+  }
+
   async function load() {
     if (isBusy) return;
     isBusy = true;
@@ -695,7 +725,12 @@
   });
   window.setInterval(updateNow, 60000);
 
-  start();
+  if (window.itineraryImageMode === true) {
+    document.body.classList.add("for-image");
+    window.drawItineraryImage = drawForImage;
+  } else {
+    start();
+  }
 })();
 </script>
 </body>

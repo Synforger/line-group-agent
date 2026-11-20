@@ -65,6 +65,8 @@ then ("tell us to gather at 21:00 the evening before"); list_reminders and cance
 show and remove them. When asked to "set a reminder" without a time or a text, decide both \
 from the conversation and the itinerary (get_itinerary), set it, and say in one line what \
 and when; ask only when you cannot decide. A refused call is explained to the members.
+- get_itinerary with show_image sends the plan as images: use it when a member asks for \
+the plan as an image, and when you have just finished building it.
 - split_bill does the sums for dividing costs among members: give it who paid what for \
 whom, never calculate shares yourself.
 - send_location shows one place on a map after your reply (one per reply); give a real \

@@ -292,6 +292,17 @@ def test_photo_settings_below_their_minimum_are_refused(
         make_config(tmp_path, **overrides)
 
 
+def test_the_public_address_is_unset_by_default_and_loses_a_trailing_slash(tmp_path: Path) -> None:
+    assert make_config(tmp_path).public_base_url is None
+    config = make_config(tmp_path, public_base_url="https://bot.example.com/")
+    assert config.public_base_url == "https://bot.example.com"
+
+
+def test_a_public_address_that_is_not_http_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="public_base_url"):
+        make_config(tmp_path, public_base_url="bot.example.com")
+
+
 def test_the_welcome_text_is_empty_by_default_and_trimmed(tmp_path: Path) -> None:
     assert make_config(tmp_path).welcome_text == ""
     assert make_config(tmp_path, welcome_text="  Welcome!\n").welcome_text == "Welcome!"

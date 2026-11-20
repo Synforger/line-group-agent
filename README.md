@@ -206,6 +206,7 @@ All under `state_dir`:
 |---|---|
 | `groups/<groupId>/messages.jsonl` | Every text message of the group, a line for each photo (`[写真]`) and location (`[位置]`), and every reply the bot sent (marked `from_bot`; a reply that carried cards, a poll or a place ends with a line naming them), one JSON object per line. Appended to; messages are removed when deleted or older than `retention_days` |
 | `groups/<groupId>/images/` | The photos of the group, made small enough for the model; removed with their messages |
+| `groups/<groupId>/itinerary-images/` | Images the bot drew from the itinerary (PNGs with unguessable names); removed 30 days after they were written |
 | `groups/<groupId>/polls.json` | The group's polls and who voted for what |
 | `groups/<groupId>/reminders.json` | The group's reminders and whether each was sent |
 | `groups/<groupId>/itinerary.json` | The group's trip itinerary and its last five earlier versions |
@@ -229,7 +230,7 @@ has handled each one, and writes down what came back. The Claude API is the real
 run spends real money; `budget` in the settings counts it.
 
 ```bash
-uv sync --python 3.12                    # the dev tools include Playwright
+uv sync --python 3.12                    # Playwright is one of the agent's dependencies
 uv run playwright install chromium       # once, for the pictures
 uv run python -m line_group_agent.simulator \
   --config /path/to/simulator-config.json \
@@ -283,7 +284,7 @@ uv run python -m line_group_agent.simulator \
 - **Results.** `--out` gets `index.html` (every scenario with its steps, seconds and spend) and a
   folder per scenario: `transcript.json` (each step's input, the agent's raw replies and pushes,
   seconds, and spend), `chat.html` (a phone-width talk: names and bubbles, text, Flex cards and
-  carousels drawn roughly, quick reply buttons, photos, pins, and the seconds and spend under each
+  carousels drawn roughly, quick reply buttons, photos, pins, the itinerary images the bot drew, and the seconds and spend under each
   answer; one file, nothing loaded from outside) and `screens/` (pictures of the chat and of the
   LIFF pages that were opened). The cards are an approximation of LINE's drawing; the LIFF pages are
   the real pages, with LINE's SDK replaced by a stand-in and every outside address refused.

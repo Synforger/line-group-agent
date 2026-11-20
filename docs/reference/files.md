@@ -35,6 +35,13 @@ replaced whole:
 The [photos](group-tools.md#photos) of the group, one file per photo named after its message
 (`<message id>.jpg`, `.png`, `.gif` or `.webp`). A file is removed when its message is.
 
+## `groups/<groupId>/itinerary-images/`
+
+The images of the group's [trip itinerary](group-tools.md#trip-itinerary), one PNG per image,
+named by 128 random bits (`<id>.png`) so the address that serves it,
+[`/liff/media/<id>.png`](liff.md#the-itinerary-images), cannot be guessed. A file is removed
+30 days after it was written, when the agent next draws an image.
+
 ## `conversations/g-<groupId>.jsonl`
 
 One file per group; the name is `g-` and the group id in lower case. It holds the

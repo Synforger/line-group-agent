@@ -28,8 +28,8 @@ V2_TOKEN = re.compile(r"\{\{|\}\}|\{(\w+)\}")
 
 
 def render_chat_page(transcript: ScenarioTranscript, image_uris: Mapping[str, str]) -> str:
-    """Return the chat page. `image_uris` maps the file path of a photo a member sent to the
-    `data:` address that shows it."""
+    """Return the chat page. `image_uris` maps the file path of a photo a member sent, and the
+    address of an image the bot sent, to the `data:` address that shows it."""
     quotes = _quotes_of(transcript)
     names = {str(m.get("user_id")): str(m.get("name")) for m in transcript.group.get("members", [])}
     rows: list[str] = [f'<div class="day">{escape(transcript.started_at[:10])}</div>']
@@ -77,7 +77,7 @@ def _rows_of(
     if step.error:
         rows.append(f'<div class="system problem">⚠ {escape(step.error)}</div>')
     for output in step.outputs:
-        rows.append(_bot_row(output, transcript, quotes, names))
+        rows.append(_bot_row(output, transcript, quotes, names, image_uris))
     rows.append(f'<div class="meta">{escape(_meta_of(step))}</div>')
     return rows
 
@@ -131,7 +131,7 @@ def _liff_shared_row(step: StepRecord, share: dict[str, Any]) -> str:
     """The row of what the page passed to `liff.shareTargetPicker`: the member's messages to
     a chat of their choice, drawn as the receiver would see them."""
     flex = FlexHtml({})
-    parts = [_message_html(message, flex, {}, {}, {}) for message in share.get("messages", [])]
+    parts = [_message_html(message, flex, {}, {}, {}, {}) for message in share.get("messages", [])]
     name = escape(step.sender_name or "")
     return (
         f'<div class="row"><div class="col"><span class="name">{name} → another chat '
@@ -144,10 +144,14 @@ def _bot_row(
     transcript: ScenarioTranscript,
     quotes: Mapping[str, str],
     names: Mapping[str, str],
+    image_uris: Mapping[str, str],
 ) -> str:
     numbers = action_numbers(output.messages)
     flex = FlexHtml(numbers)
-    parts = [_message_html(message, flex, numbers, quotes, names) for message in output.messages]
+    parts = [
+        _message_html(message, flex, numbers, quotes, names, image_uris)
+        for message in output.messages
+    ]
     bot_name = transcript.bot_name
     label = f"{bot_name} · {output.kind} #{output.output_index}"
     if output.kind == "push" and output.target != transcript.group.get("id"):
@@ -165,6 +169,7 @@ def _message_html(
     numbers: Mapping[int, int],
     quotes: Mapping[str, str],
     names: Mapping[str, str],
+    image_uris: Mapping[str, str],
 ) -> str:
     kind = message.get("type")
     if kind in ("text", "textV2"):
@@ -183,9 +188,9 @@ def _message_html(
     elif kind == "location":
         body = _pin_html(message)
     elif kind == "image" and isinstance(message.get("originalContentUrl"), str):
-        body = (
-            f'<img class="photo" src="{escape(message["originalContentUrl"], quote=True)}" alt="">'
-        )
+        url = message["originalContentUrl"]
+        shown = image_uris.get(url, url)
+        body = f'<img class="photo plan" src="{escape(shown, quote=True)}" alt="">'
     else:
         body = f'<div class="bubble">[{escape(str(kind))}]</div>'
     return body + _quick_html(message.get("quickReply"), numbers)

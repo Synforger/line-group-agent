@@ -6,6 +6,7 @@ Built by the service builder from the feature folders' tools; read by the model 
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterable
 from typing import Any
 
@@ -34,6 +35,10 @@ class ClientTools:
         """Whether a tool of this name is known."""
         return isinstance(name, str) and name in self._tools
 
-    def run(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
-        """Run the named tool (it must be known) and return its result."""
-        return self._tools[name].run(tool_input, turn)
+    async def run(self, name: str, tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        """Run the named tool (it must be known), waiting for it when it waits, and return
+        its result."""
+        outcome = self._tools[name].run(tool_input, turn)
+        if inspect.isawaitable(outcome):
+            return await outcome
+        return outcome

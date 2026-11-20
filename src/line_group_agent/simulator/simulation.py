@@ -23,7 +23,11 @@ from fastapi import FastAPI
 from line_group_agent.config.agent_config import AgentConfig, load_secrets
 from line_group_agent.service.service_builder import build_app
 from line_group_agent.simulator.fake_line_server import FakeLineServer
-from line_group_agent.simulator.local_server import LocalServer
+from line_group_agent.simulator.local_server import (
+    LocalServer,
+    loopback_url,
+    reserve_loopback_socket,
+)
 from line_group_agent.simulator.report_writer import write_index, write_scenario_report
 from line_group_agent.simulator.scenario import Scenario
 from line_group_agent.simulator.scenario_clock import ScenarioClock
@@ -111,6 +115,7 @@ async def _run_scenario(
     line = FakeLineServer(scenario.group)
     line_server = LocalServer(line.app)
     await line_server.start()
+    bot_socket = reserve_loopback_socket()
     try:
         bot_config = replace(
             config,
@@ -118,12 +123,13 @@ async def _run_scenario(
             state_dir=run_dir,
             tabs_file=run_dir / "tabs.json",
             budget=replace(config.budget, monthly_limit=month.limit - month.spent),
+            public_base_url=loopback_url(bot_socket),
             line_api_base_url=line_server.base_url,
             line_data_api_base_url=line_server.base_url,
         )
         clock = ScenarioClock()
         app = build_bot(bot_config, clock)
-        bot_server = LocalServer(app)
+        bot_server = LocalServer(app, reserved=bot_socket)
         await bot_server.start()
         try:
             runner = ScenarioRunner(
@@ -146,10 +152,11 @@ async def _run_scenario(
         finally:
             await bot_server.stop()
     finally:
+        bot_socket.close()
         await line_server.stop()
     if transcript.total_spend is not None:
         month.add(transcript.total_spend.amount)
-    chat_file = write_scenario_report(scenario_dir, transcript)
+    chat_file = write_scenario_report(scenario_dir, transcript, run_dir)
     if screens is not None:
         screens_dir.mkdir(parents=True, exist_ok=True)
         await screens.capture_chat(chat_file, screens_dir / CHAT_PICTURE)

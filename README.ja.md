@@ -178,6 +178,7 @@ agent は使った額を数えますが、料金は調べません。料金の�
 |---|---|
 | `groups/<groupId>/messages.jsonl` | グループの text の発言全部と、写真 (`[写真]`)・位置 (`[位置]`) ごとの 1 行と、bot が送った返事 (`from_bot` の印付き。カード・投票・場所を付けた返事は、末尾にその名前を並べた行が付く)。1 行 1 発言。追記される。消した発言と `retention_days` より古い発言は取り除かれる |
 | `groups/<groupId>/images/` | グループの写真 (model に渡せる大きさに縮めた物)。発言と一緒に消える |
+| `groups/<groupId>/itinerary-images/` | bot が予定表から描いた画像 (推測できない名前の PNG)。書いてから 30 日で消える |
 | `groups/<groupId>/polls.json` | グループの投票と、誰が何に票を入れたか |
 | `groups/<groupId>/itinerary.json` | グループの旅の予定表と、前の 5 つの版 |
 | `conversations/g-<groupId>.jsonl` | グループの続いている会話: model に送った物と model の答え。chat の client が読むだけのタブとして見せる |
@@ -200,7 +201,7 @@ agent に流して、どう答えるかを見る道具です。LINE の API の�
 実際にお金がかかります。額は設定の `budget` で数えます。
 
 ```bash
-uv sync --python 3.12                    # dev の道具に Playwright が入る
+uv sync --python 3.12                    # Playwright は agent の依存に入っている
 uv run playwright install chromium       # 画面の写しのために 1 回だけ
 uv run python -m line_group_agent.simulator \
   --config /path/to/simulator-config.json \
@@ -225,7 +226,7 @@ uv run python -m line_group_agent.simulator \
   画像の path は筋書きの file のある folder から読みます。
 - **出る物。** `--out` の下に `index.html` (筋書きごとの step 数・秒数・額) と筋書きごとの folder:
   `transcript.json` (step ごとの入力・agent の返事の生の中身・秒数・額)、`chat.html` (スマホの幅のトーク: 人ごとの
-  名前と吹き出し・文・Flex のカードと横の束 (近似)・返事のボタン・写真・位置・返事の下の秒数と額。外から
+  名前と吹き出し・文・Flex のカードと横の束 (近似)・返事のボタン・写真・位置・bot が描いた予定表の画像・返事の下の秒数と額。外から
   何も読まない 1 file)、`screens/` (トークと、開いた LIFF のページの PNG)。カードは LINE の描き方の近似で、
   LIFF のページは本物のページです (LINE の SDK だけ代わりに差し替え、外の宛先は全部断ります)。
   写しが要らない時は `--no-screens`。

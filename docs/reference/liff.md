@@ -102,12 +102,36 @@ link (see [What the agent promises](#what-the-agent-promises)). The message itse
 question and the options (or the item titles) in plain text, so it shows what the sender chose
 to send, to the chat they chose.
 
+## The itinerary images
+
+The bot can also send the plan into the talk as images (`get_itinerary` with `show_image`, see
+[Trip itinerary](group-tools.md#trip-itinerary)). They are the itinerary page itself, drawn by
+the same code in a headless Chromium: every day one under the other (the day's heading, the
+items without a time, then its axis and bands), in the light colours whatever the appearance of
+the machine, 750 pixels wide. Nothing is fetched from outside while it draws.
+
+- A plan that is too long for one image is cut between days into up to three. Days that still do
+  not fit are left out, and the bot is told so and points to the card and the page
+- An image is a PNG under `<state_dir>/groups/<groupId>/itinerary-images/`, kept 30 days (see
+  [Files](files.md)), and served at `GET /liff/media/<id>.png` below `public_base_url`. LINE
+  fetches it with no login, so the 128-bit id in the name is the only key; no other name gives
+  anything (404). The answer may be cached for a day
+- It needs Chromium: `uv run playwright install chromium`, and on Linux a Japanese font (for
+  example Noto Sans CJK JP) so the text is not drawn as boxes. When Chromium cannot start, the
+  agent logs it, sends no image and sends the card instead
+- Drawing takes a few seconds, so a mention that asks for an image is answered later than one
+  that asks for the card; the agent keeps taking other requests meanwhile, and draws one image
+  set at a time
+- It works only with the settings below, and `public_base_url` must be an `https` address that
+  reaches `/liff/media/` (the same proxy or tunnel as step 3 of [Setting it up](#setting-it-up))
+
 ## Settings
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `liff_id` | none | The LIFF ID of your LIFF app (`<number>-<letters>`) |
 | `login_channel_id` | none | The channel ID of the LINE Login channel the LIFF app belongs to |
+| `public_base_url` | none | The agent's address from outside, `https://<your-host>`; with it the itinerary can be sent as images |
 | `liff_max_requests_per_user_per_minute` | `60` | Requests one member may make to the page's API in a minute |
 | `liff_max_body_bytes` | `1024` | Largest request body the page's API accepts |
 | `liff_max_failed_verifies_per_minute` | `30` | Verifies LINE may refuse in a minute, over all requests, before the agent stops asking |
@@ -130,6 +154,7 @@ keeps working through its card.
    changed in the same place.
 3. Make `https://<your-host>/liff/` and `https://<your-host>/liff/api/` reach the same
    address as the webhook (`http://127.0.0.1:8790`), by the same reverse proxy or tunnel.
+   Everything under `/liff/` is meant, which includes `/liff/media/` for the images.
 4. Put the LIFF ID in `liff_id` and the Login channel's ID in `login_channel_id`, and
    restart.
 5. For [sending a page to another chat](#sending-a-page-to-another-chat), on the same channel's

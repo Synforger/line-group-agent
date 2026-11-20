@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -95,3 +96,33 @@ async def test_a_tool_that_fails_gives_the_model_an_error_result_and_the_answer_
     assert result.text == "Sorry."
     [tool_result] = world.client.messages.requests[1]["messages"][-1]["content"]
     assert tool_result["is_error"] is True and "disk full" not in tool_result["content"]
+
+
+async def test_a_tool_that_waits_is_awaited_and_the_loop_keeps_running_meanwhile(
+    tmp_path: Path,
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow(tool_input: object, turn: ToolTurn) -> ToolOutcome:
+        started.set()
+        await release.wait()
+        return ToolOutcome("waited")
+
+    tool = ClientTool("slow", {"name": "slow", "description": "d", "input_schema": {}}, slow)
+    world = build_world(
+        tmp_path,
+        [call("slow", {}), text_answer("<reply>done</reply>", message_id="msg_2")],
+        tools=[tool],
+    )
+    turn = asyncio.create_task(world.answerer.answer(GROUP, MENTION))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    ticks = 0
+    for _ in range(3):
+        await asyncio.sleep(0)
+        ticks += 1
+    assert ticks == 3 and not turn.done()
+    release.set()
+    assert (await asyncio.wait_for(turn, timeout=5)).text == "done"
+    [tool_result] = world.client.messages.requests[1]["messages"][-1]["content"]
+    assert tool_result["content"] == "waited"

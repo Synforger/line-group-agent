@@ -1,13 +1,16 @@
 """The routes of the LIFF pages: `GET /liff/` (the voting page, no group content) and
 `POST /liff/api/poll` and `POST /liff/api/vote` (the poll's content, for a verified member);
 with an itinerary service also `GET /liff/itinerary` (the itinerary page) and
-`POST /liff/api/itinerary` (the plan, for a verified member).
+`POST /liff/api/itinerary` (the plan, for a verified member); with an image store also
+`GET /liff/media/<id>.png` (an itinerary image, for LINE, which fetches it with no login: the
+unguessable id is the key).
 
 The ID token comes in the `Authorization: Bearer` header, the link id and the option
 in a small JSON body; the last address of `X-Forwarded-For` (the one the reverse proxy in
 front appends; the earlier ones are written by the caller) names where a request came from.
-Every answer says `Cache-Control: no-store`; a refusal is a bare status
-with a one-word error and no detail. Built by the service builder and added to the web app.
+Every answer says `Cache-Control: no-store`, except an image's, which may be kept a day; a
+refusal is a bare status with a one-word error and no detail. Built by the service builder
+and added to the web app.
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from line_group_agent.itinerary.itinerary_image_store import ItineraryImageStore
+from line_group_agent.itinerary.itinerary_images import MEDIA_PATH
 from line_group_agent.liff.liff_itineraries import LiffItineraries
 from line_group_agent.liff.liff_polls import LiffPolls
 from line_group_agent.liff.liff_refusal import (
@@ -36,6 +41,8 @@ POLL_PATH = "/liff/api/poll"
 VOTE_PATH = "/liff/api/vote"
 ITINERARY_PAGE_PATH = "/liff/itinerary"
 ITINERARY_PATH = "/liff/api/itinerary"
+MEDIA_ROUTE = MEDIA_PATH + "{name}"
+IMAGE_MEDIA_TYPE = "image/png"
 HTTP_PAYLOAD_TOO_LARGE = 413
 BEARER_PREFIX = "bearer "
 MAX_TOKEN_CHARS = 4096
@@ -55,7 +62,11 @@ SAFE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
-
+IMAGE_HEADERS = {
+    "Cache-Control": "public, max-age=86400",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 Action = Callable[[str, dict[str, Any], str | None], Awaitable[dict[str, Any]]]
 
@@ -67,9 +78,11 @@ def build_liff_router(
     max_body_bytes: int,
     itinerary_page: str | None = None,
     itineraries: LiffItineraries | None = None,
+    images: ItineraryImageStore | None = None,
 ) -> APIRouter:
     """Return the routes of the voting page, serving `page` and answering for `polls`; given
-    `itinerary_page` and `itineraries`, those of the itinerary page as well."""
+    `itinerary_page` and `itineraries`, those of the itinerary page as well, and given
+    `images`, the one that serves the itinerary images."""
     router = APIRouter()
 
     async def show_action(token: str, body: dict[str, Any], source: str | None) -> dict[str, Any]:
@@ -95,7 +108,18 @@ def build_liff_router(
 
     if itinerary_page is not None and itineraries is not None:
         _add_itinerary_routes(router, itinerary_page, itineraries, max_body_bytes)
+    if images is not None:
+        _add_image_route(router, images)
     return router
+
+
+def _add_image_route(router: APIRouter, images: ItineraryImageStore) -> None:
+    @router.get(MEDIA_ROUTE)
+    async def show_image(name: str) -> Response:
+        png = images.read(name)
+        if png is None:
+            return _json(404, {"error": "not_found"})
+        return Response(png, media_type=IMAGE_MEDIA_TYPE, headers=IMAGE_HEADERS)
 
 
 def _add_itinerary_routes(

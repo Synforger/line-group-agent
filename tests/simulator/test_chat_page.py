@@ -122,6 +122,32 @@ def test_photos_pins_presses_waits_and_opened_pages_are_drawn() -> None:
     assert 'src="screens/step-05-liff.png"' in html and "opened the page" in html
 
 
+def test_an_image_the_bot_sent_is_drawn_from_its_data_address_or_else_its_own() -> None:
+    sent = "http://127.0.0.1:9/liff/media/a.png"
+    unread = "http://127.0.0.1:9/liff/media/b.png"
+    output = OutputRecord(
+        0,
+        "reply",
+        1.0,
+        "Cg",
+        [
+            {"type": "image", "originalContentUrl": sent, "previewImageUrl": sent},
+            {"type": "image", "originalContentUrl": unread, "previewImageUrl": unread},
+        ],
+    )
+    transcript = ScenarioTranscript(
+        "trip",
+        "A trip",
+        GROUP,
+        "Sora",
+        "2026-11-20T10:00:00+09:00",
+        [step(0, "text", {"type": "text", "text": "plan"}, outputs=[output])],
+    )
+    html = render_chat_page(transcript, {sent: "data:image/png;base64,BBBB"})
+    assert 'class="photo plan" src="data:image/png;base64,BBBB"' in html
+    assert f'src="{unread}"' in html
+
+
 def test_a_problem_is_shown_and_everything_is_escaped() -> None:
     html = page_of(
         step(0, "text", {"type": "text", "text": "<b>x</b>"}, error="the bot was not done <soon>")
