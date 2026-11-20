@@ -6,7 +6,7 @@ import pytest
 from line_group_agent.agent.client_tool import ClientTool, ToolOutcome, ToolTurn
 from line_group_agent.agent.turn_output import MAX_EXTRA_MESSAGES, TurnOutput
 from line_group_agent.polls.poll_book import PollBook
-from line_group_agent.polls.poll_tools import clean_labels, poll_tools
+from line_group_agent.polls.poll_tools import clean_labels, made_poll_id, poll_tools
 from line_group_agent.records.group_log import GroupMessage
 from tests.fakes import answer, text_answer
 from tests.world import GROUP, NOW_FOR_TESTS, build_world
@@ -283,3 +283,19 @@ def test_with_a_liff_app_a_date_poll_card_opens_the_page_too(tmp_path: Path) -> 
         if entry["type"] == "button"
     ]
     assert buttons == ["uri"]
+
+
+def test_the_made_poll_id_is_read_back_from_the_result_of_a_made_poll(tmp_path: Path) -> None:
+    tools, _ = tools_for(tmp_path)
+    made, _ = run(tools["create_poll"], {"question": "Q", "options": ["A", "B"]})
+    refused, _ = run(tools["create_poll"], {"question": "Q", "options": ["A"]})
+    assert made_poll_id(made) == "p1"
+    assert made_poll_id(refused) is None
+    assert made_poll_id(ToolOutcome("Poll p9 is sent as a card", is_error=True)) is None
+
+
+def test_each_creating_tool_tells_the_model_not_to_make_both_for_the_same_dates() -> None:
+    book = PollBook(Path("unused"), lambda: NOW_FOR_TESTS)
+    definitions = {tool.name: tool.definition["description"] for tool in poll_tools(book)}
+    assert "create_date_poll" in definitions["create_poll"]
+    assert "create_poll" in definitions["create_date_poll"]

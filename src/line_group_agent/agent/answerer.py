@@ -54,6 +54,11 @@ from line_group_agent.events.speaker_lookup import speakers_in
 from line_group_agent.line_api.outgoing_extra import OutgoingExtra
 from line_group_agent.line_api.quick_reply import QuickReplyItem
 from line_group_agent.media.photo_picker import PhotoPicker
+from line_group_agent.polls.poll_tools import (
+    POLL_ALREADY_MADE_RESULT,
+    POLL_MAKING_TOOL_NAMES,
+    made_poll_id,
+)
 from line_group_agent.records.group_conversation import GroupConversation
 from line_group_agent.records.group_conversations import GroupConversations
 from line_group_agent.records.group_log import GroupLog, GroupMessage
@@ -169,6 +174,7 @@ class Answerer:
         texts: list[str] = []
         cards: list[Card] = []
         output = TurnOutput()
+        made_poll_ids: list[str] = []
         is_api_down = is_over_budget = False
         last_answer: dict[str, Any] = {}
         for request_index in range(self.config.max_tool_rounds + 1):
@@ -211,7 +217,9 @@ class Answerer:
             if request_index == self.config.max_tool_rounds:
                 logger.info("answer: tool rounds used up (%d)", self.config.max_tool_rounds)
                 break
-            results, shown = await self._run_tools(conversation, mention, content, output)
+            results, shown = await self._run_tools(
+                conversation, mention, content, output, made_poll_ids
+            )
             if shown is not None:
                 cards = shown
             messages.append({"role": "user", "content": results})
@@ -335,10 +343,13 @@ class Answerer:
         mention: GroupMessage,
         content: list[dict[str, Any]],
         output: TurnOutput,
+        made_poll_ids: list[str],
     ) -> tuple[list[dict[str, Any]], list[Card] | None]:
         """Run the client tools of one turn. Also return the cards of the last
         `show_cards` call that held a usable card, or None when there was none. The group
-        tools add their messages and quick replies to `output`."""
+        tools add their messages and quick replies to `output`. `made_poll_ids` holds the
+        polls the earlier rounds of this answer made: once it has one, a later poll-making
+        call is not run, so one request makes one poll."""
         results: list[dict[str, Any]] = []
         shown: list[Card] | None = None
         run_calls: set[tuple[object, str]] = set()
@@ -368,8 +379,14 @@ class Answerer:
                     results.append(_tool_result(block, DUPLICATE_CALL_RESULT))
                     continue
                 run_calls.add(call)
+                if made_poll_ids and name in POLL_MAKING_TOOL_NAMES:
+                    refusal = POLL_ALREADY_MADE_RESULT.format(poll_id=made_poll_ids[0])
+                    results.append(_tool_result(block, refusal))
+                    continue
                 turn = ToolTurn(conversation.group_id, mention, output)
                 outcome = await self._run_client_tool(str(name), block.get("input"), turn)
+                if name in POLL_MAKING_TOOL_NAMES and (poll_id := made_poll_id(outcome)):
+                    made_poll_ids.append(poll_id)
                 results.append(_tool_result(block, outcome.content, is_error=outcome.is_error))
                 continue
             results.append(self._run_query_tool(conversation, mention, block))
