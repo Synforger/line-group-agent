@@ -241,7 +241,7 @@ class ScenarioRunner:
         address = urlsplit(str(action.get("uri", "")))
         if action.get("type") != "uri" or address.hostname != LIFF_HOST:
             raise StepProblem("the action is not a link to a LIFF page")
-        page_url = f"{self._bot_url}{LIFF_PAGE_PATH}?{address.query}"
+        page_url = f"{self._bot_url}{liff_page_path(address.path)}?{address.query}"
         record.shown = {"type": "open_liff", "url": str(action["uri"])}
         if self._screens is None:
             record.note = "screens are off: the page was not opened"
@@ -319,6 +319,16 @@ class ScenarioRunner:
 
 
 _LOCATION_KEYS = ("title", "address", "latitude", "longitude")
+
+
+def liff_page_path(liff_url_path: str) -> str:
+    """Return the path of the bot's LIFF page for the path of a `liff.line.me` address.
+
+    LINE opens `https://liff.line.me/<liffId>/itinerary` at the endpoint of the LIFF app with
+    what follows the id added, so the page path is the endpoint plus that rest.
+    """
+    _, _, rest = liff_url_path.lstrip("/").partition("/")
+    return f"{LIFF_PAGE_PATH}{rest}"
 
 
 def _kind_of(step: Step) -> str:
