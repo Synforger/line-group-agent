@@ -1,0 +1,128 @@
+"""Take pictures of pages in a headless Chromium (Playwright): the chat page and the LIFF
+pages the bot serves.
+
+LINE's LIFF SDK is replaced by a small stand-in (`liff_sdk_stub.js`) so a page opens outside
+LINE as a chosen member, and every address outside this machine is refused so a page cannot
+reach the network. Called by the simulation. The browser is closed with a close request and
+awaited, never killed.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from line_group_agent.simulator.id_token import read_id_token
+
+LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js"
+STUB_FILE = Path(__file__).with_name("liff_sdk_stub.js")
+LOCAL_ORIGIN = "http://127.0.0.1"
+PHONE_WIDTH = 390
+PHONE_HEIGHT = 844
+LIFF_SCALE = 2
+CHAT_SCALE = 1
+PAGE_TIMEOUT_MS = 20000
+SETTLE_MS = 600
+PROBLEM_SCRIPT = "(document.getElementById('problem') || {}).textContent || ''"
+
+
+class ScreensUnavailableError(RuntimeError):
+    """Playwright or its browser is not installed."""
+
+
+class ScreenCapture:
+    """A headless Chromium that takes full-page pictures at a phone's width."""
+
+    def __init__(self) -> None:
+        self._playwright: Any = None
+        self._browser: Any = None
+
+    async def open(self) -> None:
+        """Start the browser."""
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError as error:
+            raise ScreensUnavailableError("playwright is not installed") from error
+        self._playwright = await async_playwright().start()
+        try:
+            self._browser = await self._playwright.chromium.launch()
+        except Exception as error:  # the browser build may be missing; say how to get it
+            await self._playwright.stop()
+            self._playwright = None
+            raise ScreensUnavailableError(
+                "Chromium could not start; run `uv run playwright install chromium`"
+            ) from error
+
+    async def close(self) -> None:
+        """Close the browser and wait until it is gone."""
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            await self._playwright.stop()
+            self._playwright = None
+
+    async def __aenter__(self) -> ScreenCapture:
+        await self.open()
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.close()
+
+    async def capture_chat(self, page_file: Path, png_file: Path) -> None:
+        """Take a picture of the whole chat page written to `page_file`."""
+        context = await self._browser.new_context(
+            viewport={"width": PHONE_WIDTH, "height": PHONE_HEIGHT}, device_scale_factor=CHAT_SCALE
+        )
+        try:
+            page = await context.new_page()
+            await page.goto(page_file.resolve().as_uri(), timeout=PAGE_TIMEOUT_MS)
+            await page.wait_for_timeout(SETTLE_MS)
+            await page.screenshot(path=str(png_file), full_page=True)
+        finally:
+            await context.close()
+
+    async def capture_liff(self, page_url: str, id_token: str, png_file: Path) -> str | None:
+        """Open a LIFF page of the bot as the member the token names, take a picture of the
+        whole page and return what the page said was wrong (or the errors it logged), or None
+        when it looked well."""
+        context = await self._browser.new_context(
+            viewport={"width": PHONE_WIDTH, "height": PHONE_HEIGHT},
+            device_scale_factor=LIFF_SCALE,
+            locale="ja-JP",
+        )
+        problems: list[str] = []
+        try:
+            page = await context.new_page()
+            page.on("pageerror", lambda error: problems.append(f"page error: {error}"))
+            await page.route(lambda url: not url.startswith(LOCAL_ORIGIN), _refuse)
+            stub = _stub_for(id_token)
+            await page.route(
+                LIFF_SDK_URL,
+                lambda route: route.fulfill(body=stub, content_type="application/javascript"),
+            )
+            await page.goto(page_url, wait_until="networkidle", timeout=PAGE_TIMEOUT_MS)
+            await page.wait_for_timeout(SETTLE_MS)
+            said = str(await page.evaluate(PROBLEM_SCRIPT)).strip()
+            if said:
+                problems.insert(0, f"the page says: {said}")
+            png_file.parent.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(path=str(png_file), full_page=True)
+        finally:
+            await context.close()
+        return "; ".join(problems) or None
+
+
+async def _refuse(route: Any) -> None:
+    await route.abort()
+
+
+def _stub_for(id_token: str) -> str:
+    identity = read_id_token(id_token)
+    claims = {"sub": identity[0], "name": identity[1]} if identity else {}
+    return (
+        STUB_FILE.read_text(encoding="utf-8")
+        .replace("__ID_TOKEN__", json.dumps(id_token))
+        .replace("__CLAIMS__", json.dumps(claims, ensure_ascii=False))
+    )

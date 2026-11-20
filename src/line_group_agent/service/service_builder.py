@@ -84,7 +84,11 @@ def build_app(config: AgentConfig) -> FastAPI:
     tabs = TabsFile(config.tabs_file, conversations, books, settings, clock)
 
     client = create_anthropic_client(secrets.anthropic_api_key)
-    line = LineClient(secrets.line_channel_access_token)
+    line = LineClient(
+        secrets.line_channel_access_token,
+        base_url=config.line_api_base_url,
+        data_base_url=config.line_data_api_base_url,
+    )
     notifier = AlertNotifier(line, config.alert_user_id or config.required_member_user_id)
     polls = PollBook(config.state_dir, clock)
     itineraries = ItineraryBook(config.state_dir, clock)
@@ -167,7 +171,7 @@ def build_app(config: AgentConfig) -> FastAPI:
     if card_images is not None:
         closers.append(card_images.close)
     routers = _liff_routers(config, polls, line, clock, closers)
-    return create_app(
+    app = create_app(
         secrets.line_channel_secret,
         config.max_body_bytes,
         dispatcher,
@@ -175,6 +179,9 @@ def build_app(config: AgentConfig) -> FastAPI:
         background=[Patrol(watcher.patrol, config.patrol_interval_seconds)],
         routers=routers,
     )
+    # Read-only handle for a runner that must know when every queued event is handled.
+    app.state.event_sink = dispatcher
+    return app
 
 
 def _liff_routers(
@@ -188,7 +195,7 @@ def _liff_routers(
     its API then do not exist). The Login client it opens is added to `closers`."""
     if config.liff_id is None or config.login_channel_id is None:
         return []
-    login = LoginClient()
+    login = LoginClient(base_url=config.line_api_base_url)
     closers.append(login.close)
     service = LiffPolls(
         polls,

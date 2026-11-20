@@ -1,0 +1,37 @@
+{
+  "persona_file": "persona.md",
+  "state_dir": "/path/to/state/line-group-agent-simulator",
+  "anthropic_api_key_file": "/path/to/secrets/anthropic-api-key",
+  "line_channel_secret_file": "/path/to/secrets/simulator-line-channel-secret",
+  "line_channel_access_token_file": "/path/to/secrets/simulator-line-channel-access-token",
+  "model": "claude-haiku-5-5",
+  "max_tokens": 1024,
+  "effort": "medium",
+  "call_names": ["Assistant"],
+  "call_name_start_runs_on": true,
+  "welcome_text": "Welcome! Say \"Assistant, ...\" and I will answer.",
+  "liff_id": "1234567890-AbCdEfGh",
+  "login_channel_id": "1234567890",
+  "web_search": {"type": "web_search_20250305", "max_uses": 3},
+  "web_fetch": {"type": "web_fetch_20250910", "max_uses": 2, "max_content_tokens": 8000},
+  "prices_usd": {
+    "input_per_mtok": 0.10,
+    "output_per_mtok": 0.50,
+    "cache_write_per_mtok": 0.125,
+    "cache_write_1h_per_mtok": 0.20,
+    "cache_read_per_mtok": 0.01,
+    "long_prompt_threshold_tokens": 100000,
+    "long_input_per_mtok": 0.50,
+    "long_output_per_mtok": 2.50,
+    "long_cache_write_per_mtok": 0.625,
+    "long_cache_write_1h_per_mtok": 1.0,
+    "long_cache_read_per_mtok": 0.05,
+    "web_search_per_thousand": 10.0
+  },
+  "budget": {
+    "monthly_limit": 5,
+    "currency": "USD",
+    "currency_per_usd": 1,
+    "estimated_input_tokens_per_request": 20000
+  }
+}

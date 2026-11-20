@@ -211,6 +211,76 @@ The settings file (`settings_file`; example in [`configs/settings.example.json`]
 
 Formats are in [`docs/reference/files.md`](docs/reference/files.md).
 
+## Trying it without LINE
+
+The simulator plays a scripted group chat against the real agent, with a stand-in for LINE,
+so you can see how it answers without a LINE account, a channel or a public address. It
+starts the stand-in LINE API and the agent (the same code as the service, a fresh state
+folder, its own local ports), sends signed webhook events step by step, waits until the agent
+has handled each one, and writes down what came back. The Claude API is the real one, so a
+run spends real money; `budget` in the settings counts it.
+
+```bash
+uv sync --python 3.12                    # the dev tools include Playwright
+uv run playwright install chromium       # once, for the pictures
+uv run python -m line_group_agent.simulator \
+  --config /path/to/simulator-config.json \
+  --scenario /path/to/scenarios \
+  --out /path/to/out
+```
+
+- **Settings.** Start from [`configs/simulator.example.json`](configs/simulator.example.json):
+  an ordinary agent configuration. The two LINE secret files may hold any text (the
+  stand-in does not check them); the Claude key must be real. The simulator replaces the
+  allowed group, the state folder and the LINE addresses for each run. It keeps each scenario's
+  state under `<state_dir>/scenarios/<scenario file name>/` and clears that folder at the start of
+  the next run of the same scenario, so every run begins with an empty group. What a scenario spends
+  is added to the month's figure in `<state_dir>/spend.json`, and a scenario may spend only what is
+  left of `budget.monthly_limit`. `--max-usd` stops a scenario once it has spent that much.
+- **Scenarios.** One JSON file is one scenario; a folder runs all its `*.json` files.
+
+  ```json
+  {
+    "name": "Choosing where to go",
+    "group": {
+      "id": "Csimulatorgroup0001",
+      "name": "Trip friends",
+      "members": [{"user_id": "Uaki", "name": "Aki"}, {"user_id": "Uben", "name": "Ben"}]
+    },
+    "steps": [
+      {"from": "Uaki", "text": "Where should we go in spring?"},
+      {"from": "Uben", "text": "Somewhere with temples", "mention": true},
+      {"from": "Uaki", "press": {"reply_index": 0, "action_index": 1}},
+      {"open_liff": {"reply_index": 0, "action_index": 0}},
+      {"from": "Uben", "image": "menu.jpg"},
+      {"from": "Uaki", "location": {"title": "Cafe", "address": "Kyoto", "latitude": 35.01, "longitude": 135.76}},
+      {"wait_seconds": 2}
+    ]
+  }
+  ```
+
+  `group.id` is letters and digits only. A `text` step may set `"mention": true` to address
+  the bot the way an @-mention does (the optional `bot` object gives its `name` and `user_id`);
+  otherwise the agent's `call_names` decide whether it is called. A `press` step presses a button
+  of an earlier answer: `reply_index` counts what the agent sent, from 0, over replies and pushes;
+  `action_index` counts that message's buttons from 0 in the order they are drawn (a card's image,
+  its text, then its button; quick reply buttons last). The chat page prints each button's number.
+  A card button that sends a postback or a quick reply button that sends a text is sent to the
+  agent like LINE sends it. An `open_liff` step opens the LIFF page a card links to as a
+  member (`from`, the first member when left out) and takes its picture. Image paths are read
+  from the scenario file's folder.
+- **Results.** `--out` gets `index.html` (every scenario with its steps, seconds and spend) and a
+  folder per scenario: `transcript.json` (each step's input, the agent's raw replies and pushes,
+  seconds, and spend), `chat.html` (a phone-width talk: names and bubbles, text, Flex cards and
+  carousels drawn roughly, quick reply buttons, photos, pins, and the seconds and spend under each
+  answer; one file, nothing loaded from outside) and `screens/` (pictures of the chat and of the
+  LIFF pages that were opened). The cards are an approximation of LINE's drawing; the LIFF pages are
+  the real pages, with LINE's SDK replaced by a stand-in and every outside address refused.
+  Use `--no-screens` to skip the pictures.
+
+The exit status is 1 when a step had a problem (a timeout, a press that names nothing) and 2
+when the settings or a scenario cannot be read.
+
 ## Documentation
 
 - Setup (LINE channel, running as a service): [`docs/setup/`](docs/setup/README.md)
