@@ -4,7 +4,9 @@ Called by the patrol every `ROUND_INTERVAL_SECONDS`. A reminder goes out as a pu
 group and is marked sent. A send that fails is tried once more at the next round, and when
 that fails too the reminder is marked failed and logged. A reminder found more than
 `LATE_LIMIT` after its time (the agent was not running) is not sent but marked missed.
-Rounds never overlap, so a reminder is never sent twice. A sent reminder is not written into
+The members a reminder calls are mentioned for real when the group's record knows their names;
+LINE refusing that (a member who has left) sends the names as text. Rounds never overlap, so a
+reminder is never sent twice. A sent reminder is not written into
 the group's record: that record cuts "what was said since the bot's last turn" at the bot's
 last message, so a reminder in it would hide what members said before it. Logs carry the
 reminder's id and the status only.
@@ -14,11 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from line_group_agent.line_api.line_client import LineApiError
+from line_group_agent.events.speaker_lookup import speakers_in
+from line_group_agent.line_api.line_client import HTTP_BAD_REQUEST, LineApiError
+from line_group_agent.records.group_log import GroupLog
 from line_group_agent.reminders.push_left import PushLeft
 from line_group_agent.reminders.reminder import Reminder, ReminderState
 from line_group_agent.reminders.reminder_book import DueReminder, ReminderBook
@@ -34,7 +38,9 @@ MAX_ATTEMPTS = 2
 class ReminderLine(Protocol):
     """What the sender needs from the LINE client: a push to a group."""
 
-    async def push(self, to: str, text: str | None) -> None: ...
+    async def push(
+        self, to: str, text: str | None, *, mentionable: Mapping[str, str] | None = None
+    ) -> None: ...
 
 
 class ReminderSender:
@@ -46,8 +52,11 @@ class ReminderSender:
         line: ReminderLine,
         push_left: PushLeft,
         clock: Callable[[], datetime],
+        *,
+        group_log: GroupLog | None = None,
     ) -> None:
         self.book = book
+        self.group_log = group_log
         self.line = line
         self.push_left = push_left
         self._clock = clock
@@ -67,13 +76,33 @@ class ReminderSender:
             self.book.finish(group_id, reminder.id, ReminderState.MISSED)
             logger.warning("reminder %s: not sent, it was more than 30 minutes late", reminder.id)
             return
-        text = reminder_text(reminder)
         try:
-            await self.line.push(group_id, text)
+            await self._push(group_id, reminder)
         except LineApiError as error:
             self._note_failure(group_id, reminder, error.status)
             return
         self.book.finish(group_id, reminder.id, ReminderState.SENT)
+
+    async def _push(self, group_id: str, reminder: Reminder) -> None:
+        """Push the reminder with its people called by real mentions where the group's record
+        knows them; when LINE refuses that (a member who left the group), push it again with
+        every name written as `@name`."""
+        mentionable = self._mentionable(group_id, reminder)
+        try:
+            await self.line.push(
+                group_id, reminder_text(reminder, mentionable), mentionable=mentionable
+            )
+        except LineApiError as error:
+            if not mentionable or error.status != HTTP_BAD_REQUEST:
+                raise
+            logger.info("reminder %s: LINE refused the mentions; sending the names", reminder.id)
+            await self.line.push(group_id, reminder_text(reminder))
+
+    def _mentionable(self, group_id: str, reminder: Reminder) -> dict[str, str]:
+        if self.group_log is None or not reminder.names:
+            return {}
+        speakers = speakers_in(self.group_log, group_id)
+        return {name: speakers[name] for name in reminder.names if name in speakers}
 
     def _note_failure(self, group_id: str, reminder: Reminder, status: int) -> None:
         if reminder.attempts + 1 >= MAX_ATTEMPTS:

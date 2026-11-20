@@ -18,7 +18,7 @@ from typing import Any
 from line_group_agent.agent.answerer import Answer
 from line_group_agent.agent.plain_text import to_plain_card, to_plain_text
 from line_group_agent.alerts.alert_notifier import AlertNotifier
-from line_group_agent.events.group_speakers import speakers_of
+from line_group_agent.events.speaker_lookup import speakers_in
 from line_group_agent.line_api.line_client import (
     HTTP_BAD_REQUEST,
     TEXT_LIMIT_UTF16_UNITS,
@@ -30,9 +30,6 @@ from line_group_agent.line_api.mention_text import build_text_v2, has_mention_ma
 from line_group_agent.records.group_log import GroupLog
 
 logger = logging.getLogger(__name__)
-
-# How far back in the group's record the names of the members who may be mentioned are read.
-SPEAKER_LOOKUP_MESSAGES = 1000
 
 
 class AnswerSender:
@@ -157,8 +154,7 @@ class AnswerSender:
         exactly one member, to that member's user id. Empty when the text has no mention mark."""
         if self.group_log is None or not text or not has_mention_marks(text):
             return {}
-        recent = self.group_log.list_recent(group_id, SPEAKER_LOOKUP_MESSAGES)
-        return speakers_of(recent)
+        return speakers_in(self.group_log, group_id)
 
     async def _note_failure(self) -> None:
         if self.notifier is not None:

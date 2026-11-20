@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from line_group_agent.line_api.push_quota import PushQuota
+from line_group_agent.records.group_log import GroupLog, GroupMessage
 from line_group_agent.reminders.push_left import PushLeft
 from line_group_agent.reminders.reminder import GROUP_TIME_ZONE, Reminder, ReminderState
 from line_group_agent.reminders.reminder_book import REMINDERS_FILE_NAME, ReminderBook
@@ -25,7 +26,10 @@ class Setup:
         self.book = ReminderBook(tmp_path, self.clock)
         self.line = FakeLine(**line_options)  # type: ignore[arg-type]
         self.push_left = PushLeft(PushQuota(self.line))
-        self.sender = ReminderSender(self.book, self.line, self.push_left, self.clock)
+        self.group_log = GroupLog(tmp_path)
+        self.sender = ReminderSender(
+            self.book, self.line, self.push_left, self.clock, group_log=self.group_log
+        )
 
     def state_of(self, reminder_id: str, group: str = GROUP) -> ReminderState:
         path = self.state_dir / "groups" / group / REMINDERS_FILE_NAME
@@ -52,12 +56,46 @@ async def test_a_reminder_is_pushed_as_it_is_at_its_time_and_marked_sent(tmp_pat
     assert len(setup.line.pushes) == 1
 
 
-async def test_the_people_to_call_are_named_before_the_text(tmp_path: Path) -> None:
+async def test_the_people_the_record_does_not_know_are_named_before_the_text(
+    tmp_path: Path,
+) -> None:
     setup = Setup(tmp_path)
     setup.book.add(GROUP, "Gather", DUE, ("Aki", "Ben"))
     setup.clock.moment = DUE
     await setup.sender.send_due()
     assert setup.line.pushes == [(GROUP, "@Aki @Ben Gather")]
+    assert not setup.line.calls[0].mentionable
+
+
+async def test_the_people_the_record_knows_are_called_by_real_mentions(tmp_path: Path) -> None:
+    setup = Setup(tmp_path)
+    setup.group_log.add(GROUP, GroupMessage("t", "m1", "Uaki", "Aki", "hi"))
+    setup.book.add(GROUP, "Gather", DUE, ("Aki", "Ben"))
+    setup.clock.moment = DUE
+    await setup.sender.send_due()
+    assert setup.line.pushes == [(GROUP, "<mention>Aki</mention> @Ben Gather")]
+    assert setup.line.calls[0].mentionable == {"Aki": "Uaki"}
+    assert setup.state_of("r1") is ReminderState.SENT
+
+
+async def test_a_push_line_refuses_for_its_mentions_is_sent_again_with_the_names(
+    tmp_path: Path,
+) -> None:
+    setup = Setup(tmp_path, push_statuses=[400, None])
+    setup.group_log.add(GROUP, GroupMessage("t", "m1", "Uaki", "Aki", "hi"))
+    setup.book.add(GROUP, "Gather", DUE, ("Aki",))
+    setup.clock.moment = DUE
+    await setup.sender.send_due()
+    assert setup.line.pushes == [(GROUP, "<mention>Aki</mention> Gather"), (GROUP, "@Aki Gather")]
+    assert setup.state_of("r1") is ReminderState.SENT
+
+
+async def test_a_refused_push_without_mentions_counts_as_a_failed_send(tmp_path: Path) -> None:
+    setup = Setup(tmp_path, push_statuses=[400])
+    setup.book.add(GROUP, "Gather", DUE, ("Aki",))
+    setup.clock.moment = DUE
+    await setup.sender.send_due()
+    assert len(setup.line.pushes) == 1 and setup.state_of("r1") is ReminderState.PENDING
 
 
 async def test_a_failed_send_is_tried_again_once_at_the_next_round_and_then_sent(

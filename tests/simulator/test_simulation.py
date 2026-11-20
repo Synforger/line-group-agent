@@ -253,6 +253,40 @@ async def test_a_reminder_set_in_the_scenario_is_sent_when_the_clock_is_moved_pa
     assert "+61 min" in (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
 
 
+async def test_a_reminder_calls_a_member_who_has_spoken_by_a_real_mention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    due = (datetime.now(GROUP_TIME_ZONE) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    call = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "set_reminder",
+        "input": {"when": due, "text": "Gather at the station", "who": ["Ben"]},
+    }
+    use_scripted_model(
+        monkeypatch,
+        [answer([call], stop_reason="tool_use"), text_answer("<reply>I will remind you.</reply>")],
+    )
+    [transcript] = await run_simulation(
+        bot_config(tmp_path),
+        [
+            scenario_of(
+                TextStep(BEN.user_id, "I will be there"),
+                TextStep(AKI.user_id, "remind Ben in two hours", mention=True),
+                AdvanceStep(121),
+            )
+        ],
+        tmp_path / "out",
+        NO_SCREENS,
+    )
+    [push] = transcript.steps[2].outputs
+    [message] = push.messages
+    assert message["type"] == "textV2" and message["text"] == "{m1} Gather at the station"
+    assert message["substitution"]["m1"]["mentionee"] == {"type": "user", "userId": BEN.user_id}
+    page = (tmp_path / "out/trip/chat.html").read_text(encoding="utf-8")
+    assert '<span class="mention">@Ben</span> Gather at the station' in page
+
+
 async def test_a_member_is_mentioned_for_real_and_a_sticker_goes_out_after_the_reply(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

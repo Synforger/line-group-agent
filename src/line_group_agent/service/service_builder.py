@@ -101,7 +101,7 @@ def build_app(config: AgentConfig, clock: Callable[[], datetime] | None = None) 
     push_quota = PushQuota(line)
     push_left = PushLeft(push_quota)
     reminders = ReminderBook(config.state_dir, clock)
-    reminder_sender = ReminderSender(reminders, line, push_left, clock)
+    reminder_sender = ReminderSender(reminders, line, push_left, clock, group_log=group_log)
     client_tools = ClientTools(
         [
             *poll_tools(polls, liff_id=config.liff_id),

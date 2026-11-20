@@ -123,7 +123,9 @@ sends the text to the group by itself, without anyone mentioning it. The model s
   the model decides both from the conversation and the [itinerary](#trip-itinerary), sets it,
   and says in one line what it set and when. It asks a short question only when it cannot decide
 - **The text is sent as it was set**, with no label such as "Reminder:" in front. To call
-  members, their names are written as `@name` before the text
+  members, they are [mentioned](#mentions) before the text: a real LINE mention for a member the
+  group's record knows by that name, `@name` as plain text for any other. When LINE refuses the
+  mentions (a member who has left the group), the reminder is sent again with `@name` for all
 - **Times are in Japan time.** A time given without an offset is taken as Japan time. A time
   that has already passed, or is more than 60 days ahead, is refused
 - **A group may have `max_reminders_per_group_per_month` reminders (10 by default) fall due in
