@@ -137,6 +137,31 @@ def test_a_name_in_the_middle_or_inside_a_word_does_not(text: str) -> None:
     assert not is_called_by_name(said(text), NAMES)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "あ、やっぱ嵐山がよかった。ソラ、さっきの変更戻せる?",
+        "そっか!  ソラ 店探して",
+        "えー\nsora、おすすめは?",
+        "どうする?\u3000ソラ、決めて",
+    ],
+)
+def test_a_name_at_the_start_of_a_later_sentence_calls_the_bot(text: str) -> None:
+    assert is_called_by_name(said(text), NAMES)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "あ、やっぱ嵐山がよかった。昨日ソラに聞いた",
+        "やった!ソラって便利だね",
+        "えー\nSoraya Live",
+    ],
+)
+def test_a_name_inside_a_later_sentence_or_glued_to_the_text_does_not(text: str) -> None:
+    assert not is_called_by_name(said(text), NAMES)
+
+
 def test_no_names_means_no_call() -> None:
     assert not is_called_by_name(said("ソラ、ねえ"), ())
 
@@ -243,6 +268,12 @@ def test_with_start_runs_on_a_latin_word_or_a_name_in_the_middle_still_does_not(
     text: str,
 ) -> None:
     assert not is_called_by_name(said(text), NAMES, start_runs_on=True)
+
+
+def test_with_start_runs_on_a_glued_name_at_the_start_of_a_later_sentence_calls() -> None:
+    text = "あ、やっぱ嵐山がよかった。ソラ候補出して"
+    assert is_called_by_name(said(text), NAMES, start_runs_on=True)
+    assert not is_called_by_name(said(text), NAMES)
 
 
 def test_without_start_runs_on_a_glued_name_at_the_start_does_not_call() -> None:
