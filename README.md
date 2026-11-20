@@ -29,10 +29,11 @@ short answer. It stays quiet otherwise.
   With a LIFF app set up the card opens a page inside LINE instead, with bars and names and
   nothing posted to the talk. See [Tools for the group](docs/reference/group-tools.md) and
   [The voting page](docs/reference/liff.md).
-- **Keeps the trip itinerary and splits costs.** The group has one itinerary the bot
-  reads and rewrites on request (the last five versions are kept), and a mention with only
-  the word "itinerary" gets it back at no cost. Costs are split in code, exactly, with the
-  fewest transfers.
+- **Keeps the trip itinerary and splits costs.** The group has one itinerary, kept item by
+  item (day, time, place, note), that the bot adds to, changes and undoes on request (the last
+  five versions are kept) and shows as a card that opens a calendar-style page inside LINE. A
+  mention with only the word "itinerary" gets the text back at no cost. Costs are split in
+  code, exactly, with the fewest transfers.
 - **Sees photos and places.** The newest photos sent since its last turn are shown to the
   model; a shared location is recorded, and the bot can send a place as a map message. It
   can also put tap-to-answer buttons under a question and welcome a new member.

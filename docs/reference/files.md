@@ -76,12 +76,19 @@ close). The newest 50 polls are kept. `link_id` is the random id the [voting pag
 
 ## `groups/<groupId>/itinerary.json`
 
-The group's [trip itinerary](group-tools.md#trip-itinerary), replaced whole at each update.
-`versions` holds the texts it replaced, newest first, at most five:
+The group's [trip itinerary](group-tools.md#trip-itinerary), replaced whole at each change.
+`items` holds one object per item (`start`, `end`, `place`, `note` and `url` are left out when
+empty), `start_date` is the date of day 1 and is left out when unknown, and `link_id` is the
+random id the [itinerary page](liff.md#the-itinerary-page)'s link carries. `versions` holds
+the states it replaced, newest first, at most five, in the same shape without `link_id`:
 
 ```json
-{"text": "1日目 (11/23)\n…", "saved_at": "2026-11-18T12:00:00+09:00", "versions": [{"text": "…", "saved_at": "…"}]}
+{"title": "Kyoto trip", "start_date": "2026-11-23", "items": [{"id": "a1b2c3", "day": 1, "title": "Kiyomizu", "start": "09:00", "end": "10:30", "place": "Kyoto"}], "link_id": "Zk3nQ8u1X0aV7bT2c9dE4g", "saved_at": "2026-11-18T12:00:00+09:00", "versions": [{"title": "Kyoto trip", "items": [], "saved_at": "…"}]}
 ```
+
+A file written by an earlier version, `{"text": …, "saved_at": …, "versions": [{"text": …}]}`, is still
+read: its text becomes `legacy_text` (kept beside the items) and the file is written in the
+shape above at the next change.
 
 ## `groups/<groupId>/spend.json`
 

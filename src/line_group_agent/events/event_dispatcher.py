@@ -9,8 +9,8 @@ so the next mention sees what the bot said.
 Around a mention: one person may call the bot only so many times an hour (then they are
 told once, and not answered); when the answerer says the answer will take a while, a
 "one moment" text goes out first through the reply token and the answer follows by push.
-A mention that holds only the itinerary keyword gets the saved trip itinerary as it is,
-without the model.
+A mention that holds only the itinerary keyword gets the saved trip itinerary as a card (or
+as text without a page), without the model.
 
 With `call_name_anywhere`, a text message that holds a call name anywhere else (neither a
 mention nor a name at its start or end) is also read by the model, which may stay silent
@@ -81,7 +81,7 @@ from line_group_agent.events.event_fields import (
 from line_group_agent.events.mention_limiter import MentionLimiter, MentionVerdict
 from line_group_agent.events.postback_handler import PostbackHandler
 from line_group_agent.events.wait_notice import WaitNotice
-from line_group_agent.itinerary.itinerary_book import ItineraryBook
+from line_group_agent.itinerary.itinerary_replier import ItineraryReplier
 from line_group_agent.line_api.line_client import LineApiError, LineClient, ReplyResult
 from line_group_agent.media.location_record import shared_location_line
 from line_group_agent.media.media_recorder import IMAGE_RECORD_TEXT, MediaRecorder
@@ -152,7 +152,7 @@ class EventDispatcher:
         wait_notice: WaitNotice | None = None,
         deleter: MessageDeleter | None = None,
         postbacks: PostbackHandler | None = None,
-        itineraries: ItineraryBook | None = None,
+        itineraries: ItineraryReplier | None = None,
         media: MediaRecorder | None = None,
         notifier: AlertNotifier | None = None,
         clock: Callable[[], float] = time.monotonic,
@@ -358,21 +358,18 @@ class EventDispatcher:
         return any(rest == keyword.casefold() for keyword in keywords)
 
     async def _send_itinerary(self, group_id: str, event: dict[str, Any]) -> bool:
-        """Send the saved itinerary as it is when the mention is only the itinerary keyword;
+        """Send the saved itinerary (a card) when the mention is only the itinerary keyword;
         return whether it was sent (False when no itinerary is saved, so the model answers)."""
         if self.itineraries is None or not self._is_only_keyword(
             event, self.texts.itinerary_keywords
         ):
             return False
-        itinerary = self.itineraries.get(group_id)
-        if itinerary is None:
+        answer = self.itineraries.answer_for(group_id)
+        if answer is None:
             return False
         logger.info("answer: sent the saved itinerary")
         await self._sender.send(
-            group_id,
-            event.get("replyToken"),
-            Answer(itinerary.text, record=False),
-            quote_token=quote_token_of(event),
+            group_id, event.get("replyToken"), answer, quote_token=quote_token_of(event)
         )
         return True
 

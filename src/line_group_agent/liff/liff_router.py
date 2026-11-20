@@ -1,7 +1,9 @@
-"""The routes of the voting page: `GET /liff/` (the page, no group content) and
-`POST /liff/api/poll` and `POST /liff/api/vote` (the poll's content, for a verified member).
+"""The routes of the LIFF pages: `GET /liff/` (the voting page, no group content) and
+`POST /liff/api/poll` and `POST /liff/api/vote` (the poll's content, for a verified member);
+with an itinerary service also `GET /liff/itinerary` (the itinerary page) and
+`POST /liff/api/itinerary` (the plan, for a verified member).
 
-The ID token comes in the `Authorization: Bearer` header, the poll's link id and the option
+The ID token comes in the `Authorization: Bearer` header, the link id and the option
 in a small JSON body; the last address of `X-Forwarded-For` (the one the reverse proxy in
 front appends; the earlier ones are written by the caller) names where a request came from.
 Every answer says `Cache-Control: no-store`; a refusal is a bare status
@@ -17,13 +19,14 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from line_group_agent.liff.liff_polls import (
+from line_group_agent.liff.liff_itineraries import LiffItineraries
+from line_group_agent.liff.liff_polls import LiffPolls
+from line_group_agent.liff.liff_refusal import (
     HTTP_BAD_REQUEST,
     HTTP_FORBIDDEN,
     HTTP_TOO_MANY_REQUESTS,
     HTTP_UNAUTHORIZED,
     HTTP_UNAVAILABLE,
-    LiffPolls,
     LiffRefusal,
 )
 from line_group_agent.webhook.capped_body import read_capped_body
@@ -31,6 +34,8 @@ from line_group_agent.webhook.capped_body import read_capped_body
 PAGE_PATH = "/liff/"
 POLL_PATH = "/liff/api/poll"
 VOTE_PATH = "/liff/api/vote"
+ITINERARY_PAGE_PATH = "/liff/itinerary"
+ITINERARY_PATH = "/liff/api/itinerary"
 HTTP_PAYLOAD_TOO_LARGE = 413
 BEARER_PREFIX = "bearer "
 MAX_TOKEN_CHARS = 4096
@@ -43,7 +48,7 @@ ERROR_WORDS = {
     HTTP_TOO_MANY_REQUESTS: "too_many_requests",
     HTTP_UNAVAILABLE: "unavailable",
 }
-# Nothing here may be cached, and the page's address (which holds the poll's link id) stays
+# Nothing here may be cached, and the page's address (which holds the link id) stays
 # out of the Referer of anything the page loads.
 SAFE_HEADERS = {
     "Cache-Control": "no-store",
@@ -55,8 +60,16 @@ SAFE_HEADERS = {
 Action = Callable[[str, dict[str, Any], str | None], Awaitable[dict[str, Any]]]
 
 
-def build_liff_router(page: str, polls: LiffPolls, *, max_body_bytes: int) -> APIRouter:
-    """Return the routes of the voting page, serving `page` and answering for `polls`."""
+def build_liff_router(
+    page: str,
+    polls: LiffPolls,
+    *,
+    max_body_bytes: int,
+    itinerary_page: str | None = None,
+    itineraries: LiffItineraries | None = None,
+) -> APIRouter:
+    """Return the routes of the voting page, serving `page` and answering for `polls`; given
+    `itinerary_page` and `itineraries`, those of the itinerary page as well."""
     router = APIRouter()
 
     async def show_action(token: str, body: dict[str, Any], source: str | None) -> dict[str, Any]:
@@ -80,7 +93,24 @@ def build_liff_router(page: str, polls: LiffPolls, *, max_body_bytes: int) -> AP
     async def vote(request: Request) -> Response:
         return await _answer(request, max_body_bytes, vote_action)
 
+    if itinerary_page is not None and itineraries is not None:
+        _add_itinerary_routes(router, itinerary_page, itineraries, max_body_bytes)
     return router
+
+
+def _add_itinerary_routes(
+    router: APIRouter, page: str, itineraries: LiffItineraries, max_body_bytes: int
+) -> None:
+    async def show_action(token: str, body: dict[str, Any], source: str | None) -> dict[str, Any]:
+        return await itineraries.show(token, _link_id_of(body, "i"), source)
+
+    @router.get(ITINERARY_PAGE_PATH)
+    async def show_page() -> Response:
+        return HTMLResponse(page, headers=SAFE_HEADERS)
+
+    @router.post(ITINERARY_PATH)
+    async def show_itinerary(request: Request) -> Response:
+        return await _answer(request, max_body_bytes, show_action)
 
 
 async def _answer(request: Request, max_body_bytes: int, action: Action) -> Response:
@@ -120,8 +150,8 @@ def _object_of(raw: bytes) -> dict[str, Any]:
     return body
 
 
-def _link_id_of(body: dict[str, Any]) -> str:
-    link_id = body.get("p")
+def _link_id_of(body: dict[str, Any], key: str = "p") -> str:
+    link_id = body.get(key)
     if not isinstance(link_id, str):
         raise LiffRefusal(HTTP_BAD_REQUEST)
     return link_id

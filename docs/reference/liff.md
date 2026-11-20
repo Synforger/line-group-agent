@@ -1,4 +1,10 @@
-# The voting page
+# The LIFF pages
+
+With a LIFF app configured the agent serves two pages that open inside LINE: the voting page
+for a poll and the [itinerary page](#the-itinerary-page) for the trip itinerary. Both read the
+same settings and the same checks (see [What the agent promises](#what-the-agent-promises)).
+
+## The voting page
 
 With a LIFF app configured, a poll card does not carry a button per option. It lists the
 options with their counts and has one button, **開いて投票**, that opens a page inside LINE.
@@ -6,7 +12,7 @@ There a vote is a tap that paints the option, grows its bar and shows who voted 
 **nothing is posted to the talk**. Without a LIFF app the poll cards work as described in
 [Polls](group-tools.md#polls) and none of this exists.
 
-## What the page shows
+### What the page shows
 
 - The question, a line saying how to vote, and one row per option: a bar filled to the
   option's share of the members who voted, its count, and the display names of the members who
@@ -22,6 +28,42 @@ There a vote is a tap that paints the option, grows its bar and shows who voted 
 
 Votes made on the page and votes made by pressing a button of an older card land in the same
 poll, and the bot's `poll_results` reads both.
+
+## The itinerary page
+
+The [trip itinerary](group-tools.md#trip-itinerary) opens as a calendar from the card the bot
+sends (**予定表を開く**). The page only shows the plan; to change it, tell the bot in the talk.
+
+- At the top the trip's name and its dates, and a tab for each day (`11/23(月) 1日目`, or
+  `1日目` when the first day is not set). The tab of today is chosen when the trip is on
+- Each day is a vertical time axis from an hour before its first item to an hour after its
+  last, with a line every half hour. An item is a band as long as its time (an hour when it
+  has no end); items that overlap stand side by side. A line shows the time now on the day of
+  today
+- Items without a time are listed at the top of their day
+- Tapping an item opens its details: its time, the place with a link to a map search, the
+  note and the link
+- An earlier memo (see the itinerary) is folded under "前のメモ". The page reads the plan when
+  it is opened, with the 更新 button and when it comes back to the front after half a minute;
+  it does not refresh on a timer
+- It is made for a phone's width and follows the light and dark appearance
+
+The page's address is `https://liff.line.me/<liff_id>/itinerary?i=<link id>` and opens
+`https://<your-host>/liff/itinerary`, below the endpoint URL of the LIFF app, so no new setting
+is needed. The link id is made for each group's itinerary from 128 random bits and kept in its
+`itinerary.json`; the group's id is never in an address.
+
+| Request | Body | Answer |
+|---|---|---|
+| `GET /liff/itinerary` | none | the page: one HTML file, no group content |
+| `POST /liff/api/itinerary` | `{"i": "<link id>"}` | the plan |
+
+The plan is `{"title", "start_date", "legacy_text", "days": [{"day", "label", "date", "unscheduled": [item], "scheduled": [item with "start_min", "end_min", "bottom_min", "column", "columns"], "axis": {"start_min", "end_min"} or null}]}`,
+where an item is `{"title", "start", "end", "place", "map_url", "note", "url"}`. No item id,
+member id or group id is in it. The request goes through the same checks as the voting page's:
+the ID token, the limits on failed verifies and on a member's requests, the link id's lookup
+and the member's place in the group; a link of another group, an unknown link and a member who
+is not in the group all give the same **403**.
 
 ## Settings
 
